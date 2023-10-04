@@ -10,7 +10,7 @@ from sympy import Symbol
 import cuquantum as cq
 from pytket import Circuit
 from pytket.circuit import PauliExpBox, Pauli
-from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, simulate
+from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, ConfigMPS, simulate
 
 class KernelStateAnsatz:
     """Class that creates and stores a symbolic ansatz circuit and can be used to
@@ -79,7 +79,7 @@ class KernelStateAnsatz:
         return the_circuit
 
 
-def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mpi_comm=None, gpu_max_mem=40, svd_cutoff=1e-15) -> np.ndarray:
+def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mpi_comm=None, gpu_max_mem=40, svd_cutoff=1e-15) -> np.ndarray:
     """Use MPI to parallelise the calculation of entries of the kernel matrix.
 
     Notes:
@@ -87,6 +87,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
         possible is preferable for matters of efficiency.
 
     Args:
+        config: An instance of ConfigMPS setting the configuration of simulations.
         ansatz: a symbolic circuit describing the ansatz.
         X: A 2D array where `X[i, :]` corresponds to the i-th data point and
             each `X[:, j]` corresponds to the values of the j-th feature across
@@ -125,7 +126,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
 
     entries_per_chunk = int(np.ceil(len(X) / n_procs))
     max_mps_per_gpu = 2*entries_per_chunk  # X + Y chunks
-    chi = int(np.sqrt(gpu_max_mem / (32*n_qubits*max_mps_per_gpu)))
+    config.chi = int(np.sqrt(gpu_max_mem / (32*n_qubits*max_mps_per_gpu)))
 
     # Dictionary to keep track of profiling information
     if rank == root:
@@ -176,8 +177,8 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
         print(f"[Rank 0] Circuit list generated. Time taken: {round(duration,2)} seconds.")
         profiling_dict["r0_circ_gen"] = [duration, "seconds"]
         print("\nContracting the MPS of the circuits from the X dataset...")
-        print(f"\tUsing chi = {chi}")
-        profiling_dict["chi"] = [chi, ""]
+        print(f"\tUsing chi = {config.chi}")
+        profiling_dict["chi"] = [config.chi, ""]
         sys.stdout.flush()
         time0 = MPI.Wtime()
 
@@ -190,7 +191,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
         for k, circ in enumerate(circs_x_chunk):
             # Simulate the circuit and obtain the output state as an MPS
             if circ is not None:
-                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=chi)
+                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
             else:
                 mps = None
             mps_x_chunk.append(mps)
@@ -225,7 +226,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(circs_y_chunk):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=chi)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
                 else:
                     mps = None
                 mps_y_chunk.append(mps)
