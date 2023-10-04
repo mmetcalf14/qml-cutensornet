@@ -8,7 +8,7 @@ from sympy import Symbol
 import cuquantum as cq
 from pytket import Circuit
 from pytket.circuit import PauliExpBox, Pauli
-from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, simulate
+from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, ConfigMPS, simulate
 
 class KernelStateAnsatz:
     """Class that creates and stores a symbolic ansatz circuit and can be used to
@@ -77,7 +77,7 @@ class KernelStateAnsatz:
         return the_circuit
 
 
-def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None) -> np.ndarray:
+def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None, info_file=None) -> np.ndarray:
     """Calculate entries of the kernel matrix.
 
     Notes:
@@ -88,7 +88,8 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None) ->
         possible is preferable for matters of efficiency.
 
     Args:
-        ansatz: a symbolic circuit describing the ansatz.
+        config: An instance of ConfigMPS setting the configuration of simulations.
+        ansatz: A symbolic circuit describing the ansatz.
         X: A 2D array where `X[i, :]` corresponds to the i-th data point and
             each `X[:, j]` corresponds to the values of the j-th feature across
             all data points.
@@ -138,7 +139,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None) ->
 
             for k, circ in enumerate(circs):
                 # Simulate the circuit and obtain the output state as an MPS
-                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
+                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
                 mps_list.append(mps)
 
                 if progress_bar * progress_checkpoint < k:
@@ -239,7 +240,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None) ->
 
             for k, circ in enumerate(x_circs + y_circs):
                 # Simulate the circuit and obtain the output state as an MPS
-                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
+                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
 
                 if k < len(x_circs):
                     x_mps_list.append(mps)

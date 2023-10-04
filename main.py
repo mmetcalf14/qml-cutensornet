@@ -11,6 +11,8 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
 from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
+from pytket.extensions.cutensornet.mps import ConfigMPS
+
 ##############
 # Parameters #
 ##############
@@ -22,6 +24,10 @@ num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
 gamma = 0.1
 entanglement_map = [[i,i+1] for i in range(num_features-1)]
+
+config = ConfigMPS(
+    value_of_zero = 1e-15
+)
 
 n_illicit_train = 120
 n_licit_train = 120
@@ -106,23 +112,23 @@ reduced_test_features = test_features[:,0:num_features]
 
 # Create the ansatz class
 ansatz = KernelStateAnsatz(
-	num_qubits=num_features,
-	reps=reps,
-	gamma=gamma,
-	entanglement_map=entanglement_map,
-	hadamard_init=True
+    num_qubits=num_features,
+    reps=reps,
+    gamma=gamma,
+    entanglement_map=entanglement_map,
+    hadamard_init=True
 )
 
 train_info = f"train_f{num_features}_r{reps}_gpus1.json"
 test_info = f"test_f{num_features}_r{reps}_gpus1.json"
 
 time0 = t.time()
-kernel_train = build_kernel_matrix(ansatz, X = reduced_train_features, info_file=train_info)
+kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info)
 time1 = t.time()
 print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
 
 time0 = t.time()
-kernel_test = build_kernel_matrix(ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info)
+kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info)
 time1 = t.time()
 print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
 
