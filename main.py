@@ -24,13 +24,13 @@ if len(sys.argv) <= 2:
 
 num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
-gamma = 0.1
+gamma = float(sys.argv[3])
 entanglement_map = [[i,i+1] for i in range(num_features-1)]
 
-n_illicit_train = 120
-n_licit_train = 120
-n_illicit_test = 120
-n_licit_test = 120
+n_illicit_train = int(sys.argv[4])
+n_licit_train = int(sys.argv[5])
+n_illicit_test = int(sys.argv[6])
+n_licit_test = int(sys.argv[7])
 
 train_size = n_licit_train+n_illicit_train
 test_size = n_licit_test+n_illicit_test
@@ -128,13 +128,15 @@ kernel_train = build_kernel_matrix(ansatz, X = reduced_train_features, info_file
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
+    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
 time0 = MPI.Wtime()
 kernel_test = build_kernel_matrix(ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, mpi_comm=mpi_comm)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-
+    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
+    print('Test Kernel\n',kernel_test)
 #############################
 # Testing the kernel matrix #
 #############################
@@ -158,3 +160,25 @@ if rank == root:
         auc = roc_auc_score(test_labels, test_predict)
         print('auc: ', auc)
         test_results.append([r,accuracy, precision, recall, auc])
+
+    train_results = []
+    print('\n Train Results\n')
+    for key, r in enumerate(reg):
+        print('coeff: ', r)
+        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+        # scale might work best as 1/Nfeautres
+
+        svc.fit(kernel_train, train_labels)
+        test_predict = svc.predict(kernel_train)
+        accuracy = accuracy_score(train_labels,test_predict)
+        print('accuracy: ', accuracy)
+        precision = precision_score(train_labels,test_predict)
+        print('precision: ', precision)
+        recall = recall_score(train_labels, test_predict)
+        print('recall: ', recall)
+        auc = roc_auc_score(train_labels, test_predict)
+        print('auc: ', auc)
+        train_results.append([r,accuracy, precision, recall, auc])
+
+    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_train),train_results)
+    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_test),test_results)
