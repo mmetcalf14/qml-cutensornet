@@ -1,0 +1,46 @@
+{
+    "lenX": [
+        240,
+        "entries"
+    ],
+    "lenY": [
+        60,
+        "entries"
+    ],
+    "r0_circ_gen": [
+        0.19527771299999586,
+        "seconds"
+    ],
+    "r0_circ_sim": [
+        151.8212915390004,
+        "seconds"
+    ],
+    "avg_circ_sim": [
+        7.990594291526338,
+        "seconds"
+    ],
+    "avg_mps_mem": [
+        0.0792236328125,
+        "MiB"
+    ],
+    "r0_broadcast": [
+        0.41506894400026795,
+        "seconds"
+    ],
+    "gpu_mps_mem": [
+        5.9417724609375,
+        "MiB"
+    ],
+    "r0_product": [
+        2014.5675328959996,
+        "seconds"
+    ],
+    "avg_product": [
+        2.238408369884444,
+        "seconds"
+    ],
+    "total_time": [
+        2167.002733483,
+        "seconds"
+    ]
+}
