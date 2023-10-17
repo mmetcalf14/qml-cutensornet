@@ -4,6 +4,7 @@ import json
 from mpi4py import MPI
 from cupy.cuda.runtime import getDeviceCount
 
+import cupy as cp
 import numpy as np
 from sympy import Symbol
 
@@ -211,6 +212,10 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
             profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
 
+        print("Creating all random MPS on GPU device...")
+        for mps in mps_list:
+            mps.tensors = [cp.random.random(t.shape) for t in mps.tensors]
+
         # Enumerate all pairs of circuits to be overlapped
         pairs = [(i, j) for i in range(n_circs) for j in range(n_circs) if i < j]
 
@@ -372,6 +377,12 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             total_bytes = sum(mps_byte_size) / (1024**2)
             print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
             profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
+
+        print("Creating all random MPS on GPU device...")
+        for mps in y_mps_list:
+            mps.tensors = [cp.random.random(t.shape) for t in mps.tensors]
+        for mps in this_proc_x_mps:
+            mps.tensors = [cp.random.random(t.shape) for t in mps.tensors]
 
         # Allocate space for kernel matrix
         kernel_mat = np.zeros(shape=(x_circs, y_circs))

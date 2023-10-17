@@ -7,7 +7,7 @@ All of the circuits in this example are defined in terms of the same symbolic ci
 
 This is one script in a set of three scripts (all named ``mpi_overlap_bcast_*``)
 where the difference is which object is broadcasted between the processes. These
-are ordered from most efficient to least efficient:
+are ordered from most efficient to least:
 - ``mpi_overlap_bcast_mps.py`` broadcasts ``MPS``.
 - ``mpi_overlap_bcast_net.py`` broadcasts ``TensorNetwork``.
 - ``mpi_overlap_bcast_circ.py`` broadcasts ``pytket.Circuit``.
@@ -15,13 +15,10 @@ are ordered from most efficient to least efficient:
 In the present script, we proceed as follows:
 - Create the same symbolic circuit on every process
 - Each process creates a fraction of the ``n_circs`` instances of the symbolic circuit.
-    - Then, converts each of the circuits it generated to a ``TensorNetwork`` object.
-- Broadcast these ``TensorNetwork`` objects to all other processes.
-- Find an efficient contraction path for the inner product TN.
-    - Since all circuits have the same structure, the same path can be used for all.
+    - Then, do *exact* simulation of each of the circuits using an MPS approach.
+- Broadcast the resulting ``MPS`` objects to all other processes.
 - Distribute calculation of inner products uniformly accross processes. Each process:
-    - Creates a TN representing the inner product ``<0|C_i^dagger C_j|0>``
-    - Contracts the TN using the contraction path previously found.
+    - Obtains the inner product ``<0|C_i^dagger C_j|0>`` using ``vdot`` of the MPS.
 
 The script is able to run on any number of processes; each process must have access to
 a GPU of its own.
@@ -32,6 +29,9 @@ Notes:
     - Here we are using ``cq.contract`` directly (i.e. cuTensorNet API), but other
       functionalities from our extension (and the backend itself) could be used
       in a similar script.
+    - The reason this is the fastest approach is that we want to do as much work as
+      possible outside of the loop that computes the inner products: this loop iterates
+      ``O(n_circs^2)`` times, but we only need to contract ``O(n_circ)`` MPS objects.
 """
 
 import sys
@@ -39,11 +39,14 @@ from random import random
 
 from cupy.cuda.runtime import getDeviceCount
 from mpi4py import MPI
-import cuquantum as cq
 
 from pytket.circuit import Circuit, fresh_symbol
 
-from pytket.extensions.cutensornet import TensorNetwork
+from pytket.extensions.cutensornet.mps import (
+    simulate,
+    ContractionAlg,
+    CuTensorNetHandle,
+)
 
 # Parameters
 n_qubits = int(sys.argv[1])
@@ -60,16 +63,12 @@ if rank == 0:
     print(f"Running {sys.argv[0]} on {n_qubits} qubits and {n_procs} processes.")
 
 time_start = MPI.Wtime()
-net_list = []
+mps_list = []
 
 if n_circs % n_procs != 0:
     raise RuntimeError(
         "Current version requires that n_circs is a multiple of n_procs."
     )
-
-#if rank == root:
-#    print("\nGenerating the circuits.")
-#    time0 = MPI.Wtime()
 
 # Generate the list of circuits in parallel
 circs_per_proc = n_circs // n_procs
@@ -95,88 +94,56 @@ for _ in range(circs_per_proc):
     my_circ.symbol_substitution(symbol_map)
     this_proc_circs.append(my_circ)
 
-#if rank == root:
-#    time1 = MPI.Wtime()
-#    print(f"Circuit list generated. Time taken: {time1-time0} seconds.\n")
-#    print("Converting circuits to nets.")
-#    sys.stdout.flush()
-#    time0 = MPI.Wtime()
+# Contract the MPS of each of the circuits in this process
+this_proc_mps = []
+with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
+    for circ in this_proc_circs:
+        mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
+        this_proc_mps.append(mps)
 
-# Convert the circuit to a TensorNetwork for of each of the circuits in this process
-this_proc_nets = [TensorNetwork(circ) for circ in this_proc_circs]
-
-#if rank == root:
-#    time1 = MPI.Wtime()
-#    print(f"Net list generated. Time taken: {time1-time0} seconds.\n")
-#    print("Broadcasting the net of the circuits.")
-#    sys.stdout.flush()
-
-# Broadcast the list of nets
+# Broadcast the list of MPS
 time0 = MPI.Wtime()
 for proc_i in range(n_procs):
-    net_list += comm.bcast(this_proc_nets, proc_i)
+    mps_list += comm.bcast(this_proc_mps, proc_i)
 time1 = MPI.Wtime()
-duration_bcast = time1 - time0
-#print(f"Nets broadcasted to {rank} in {time1-time0} seconds")
+duration_bcast = time1-time0
 
 # Enumerate all pairs of circuits to be calculated
 pairs = [(i, j) for i in range(n_circs) for j in range(n_circs) if i < j]
 
-# Find an efficient contraction path to be used by all contractions
-time0 = MPI.Wtime()
-# Prepare the Network object
-net0 = net_list[0]  # Since all circuits have the same structure
-net1 = net_list[1]  # we use these two as a template
-overlap_network = cq.Network(*net0.vdot(net1), options={"device_id": device_id})
-# Compute the path on each process with 8 samples for hyperoptimization
-path, info = overlap_network.contract_path(optimize={"samples": 8})
-# Select the best path from all ranks.
-opt_cost, sender = comm.allreduce(sendobj=(info.opt_cost, rank), op=MPI.MINLOC)
-if rank == root:
-    time0 = MPI.Wtime()
-#    print(f"Process {sender} has the path with the lowest FLOP count {opt_cost}.")
-# Broadcast path from the sender to all other processes
-path = comm.bcast(path, sender)
-# Report back to user
-#if rank == root:
-#    print(f"Contraction path found in {time1-time0} seconds.\n")
-#    sys.stdout.flush()
 
+time0 = MPI.Wtime()
 # Parallelise across all available processes
+with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
+    for mps in mps_list:
+        mps.update_libhandle(libhandle)  # Update libhandle of this local copy of mps
 
-time0 = MPI.Wtime()
+    iterations, remainder = len(pairs) // n_procs, len(pairs) % n_procs
+    progress_bar, progress_checkpoint = 0, iterations // 10
+    for k in range(iterations):
+        # Run contraction
+        (i, j) = pairs[k * n_procs + rank]
+        mps0 = mps_list[i]
+        mps1 = mps_list[j]
+        timea = MPI.Wtime()
+        overlap = mps0.vdot(mps1)
+        timeb = MPI.Wtime()
+        print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
 
-iterations, remainder = len(pairs) // n_procs, len(pairs) % n_procs
-progress_bar, progress_checkpoint = 0, iterations // 10
-for k in range(iterations):
-    # Run contraction
-    (i, j) = pairs[k * n_procs + rank]
-    net0 = net_list[i]
-    net1 = net_list[j]
-    timea = MPI.Wtime()
-    overlap = cq.contract(
-        *net0.vdot(net1), options={"device_id": device_id}, optimize={"path": path}
-    )
-    timeb = MPI.Wtime()
-    print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
-
-if rank < remainder:
-    # Run contraction
-    (i, j) = pairs[iterations * n_procs + rank]
-    net0 = net_list[i]
-    net1 = net_list[j]
-    overlap = cq.contract(
-        *net0.vdot(net1), options={"device_id": device_id}, optimize={"path": path}
-    )
-    # Report back to user
-    # print(f"Sample of circuit pair {(i, j)} taken. Overlap: {overlap}")
-
+    if rank < remainder:
+        # Run contraction
+        (i, j) = pairs[iterations * n_procs + rank]
+        mps0 = mps_list[i]
+        mps1 = mps_list[j]
+        timea = MPI.Wtime()
+        overlap = mps0.vdot(mps1)
+        timeb = MPI.Wtime()
+        print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
 time1 = MPI.Wtime()
-time_end = MPI.Wtime()
 
 # Report back to user
 duration = time1 - time0
-print(f"Runtime at {rank} is {duration}")
+#print(f"Runtime at {rank} is {duration}")
 print(f"Process {rank} has computed inner products. \n\tAt GPU {device_id}. \n\tCalculation took {duration} seconds. \n\tStarted at {time0}. \n\tBroadcast time {duration_bcast} seconds.")
 
 totaltime = comm.reduce(duration, op=MPI.MAX, root=root)
