@@ -4,6 +4,7 @@ import json
 from mpi4py import MPI
 from cupy.cuda.runtime import getDeviceCount
 
+import cupy as cp
 import numpy as np
 from sympy import Symbol
 
@@ -155,7 +156,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=8)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
                 else:
                     mps = None
                 this_proc_mps.append(mps)
@@ -210,6 +211,10 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             total_bytes = sum(mps_byte_size) / (1024**2)
             print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
             profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
+
+        print("Creating all random MPS on GPU device...")
+        for mps in mps_list:
+            mps.tensors = [cp.random.random(t.shape) for t in mps.tensors]
 
         # Enumerate all pairs of circuits to be overlapped
         pairs = [(i, j) for i in range(n_circs) for j in range(n_circs) if i < j]
@@ -309,7 +314,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=8)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
                 else:
                     mps = None
 
@@ -373,8 +378,14 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
             profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
 
+        print("Creating all random MPS on GPU device...")
+        for mps in y_mps_list:
+            mps.tensors = [cp.random.random(t.shape) for t in mps.tensors]
+        for mps in this_proc_x_mps:
+            mps.tensors = [cp.random.random(t.shape) for t in mps.tensors]
+
         # Allocate space for kernel matrix
-        kernel_mat = np.zeros(shape=(y_circs, x_circs))
+        kernel_mat = np.zeros(shape=(x_circs, y_circs))
 
         if rank == root:
             print("\nObtaining inner products...")
@@ -400,6 +411,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
                     kernel_mat[i + rank*x_circs_per_proc, j] = (overlap*np.conj(overlap)).real
                     timeb = MPI.Wtime()
                     print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
+
                     if rank == root and progress_bar * progress_checkpoint < i:
                         print(f"{progress_bar*10}%")
                         sys.stdout.flush()
