@@ -46,7 +46,7 @@ from pytket.circuit import Circuit, fresh_symbol
 from pytket.extensions.cutensornet import TensorNetwork
 
 # Parameters
-n_qubits = 15
+n_qubits = 100
 n_circs = 32
 
 root = 0
@@ -151,9 +151,12 @@ for k in range(iterations):
     (i, j) = pairs[k * n_procs + rank]
     net0 = net_list[i]
     net1 = net_list[j]
+    timea = MPI.Wtime()
     overlap = cq.contract(
         *net0.vdot(net1), options={"device_id": device_id}, optimize={"path": path}
     )
+    timeb=MPI.Wtime()
+    print('This iteration took {}s for rank {}'.format(timeb-timea,rank))
     # Report back to user
     # print(f"Sample of circuit pair {(i, j)} taken. Overlap: {overlap}")
     if rank == root and progress_bar * progress_checkpoint < k:

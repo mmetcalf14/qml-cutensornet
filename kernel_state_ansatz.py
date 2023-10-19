@@ -155,7 +155,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=8)
                 else:
                     mps = None
                 this_proc_mps.append(mps)
@@ -305,7 +305,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=8)
                 else:
                     mps = None
 
@@ -370,7 +370,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
 
         # Allocate space for kernel matrix
-        kernel_mat = np.zeros(shape=(x_circs, y_circs))
+        kernel_mat = np.zeros(shape=(y_circs, x_circs))
 
         if rank == root:
             print("\nObtaining inner products...")
@@ -387,12 +387,14 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
                 y_mps.update_libhandle(libhandle)
 
             for i, x_mps in enumerate(this_proc_x_mps):
-                x_mps.update_libhandle(libhandle)
+               x_mps.update_libhandle(libhandle) 
 
-                for j, y_mps in enumerate(y_mps_list):
-
-                    overlap = x_mps.vdot(y_mps)
-                    kernel_mat[i + rank*x_circs_per_proc, j] = (overlap*np.conj(overlap)).real
+               for j, y_mps in enumerate(y_mps_list):
+                    # timea = MPI.Wtime()
+                    overlap = y_mps.vdot(x_mps)
+                    kernel_mat[j, i+rank*x_circs_per_proc] = (overlap*np.conj(overlap)).real
+                    # timeb = MPI.Wtime()
+                    # print('It took {} seconds to get the dot product on device {} with rank {}. The time is {}'.format(timeb-timea, device_id, rank, MPI.Wtime()))
 
                     if rank == root and progress_bar * progress_checkpoint < i:
                         print(f"{progress_bar*10}%")
