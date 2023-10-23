@@ -240,7 +240,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
                 overlap = mps0.vdot(mps1)
                 kernel_mat[i, j] = kernel_mat[j, i] = (overlap*np.conj(overlap)).real
                 timeb = MPI.Wtime()
-                print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
+                #print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
 
 
                 # Report back to user
@@ -397,9 +397,9 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
 
                     timea = MPI.Wtime()
                     overlap = x_mps.vdot(y_mps)
-                    kernel_mat[i + rank*x_circs_per_proc, j] = (overlap*np.conj(overlap)).real
+                    kernel_mat[j, i + rank*x_circs_per_proc] = (overlap*np.conj(overlap)).real
                     timeb = MPI.Wtime()
-                    print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
+                    #print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
                     if rank == root and progress_bar * progress_checkpoint < i:
                         print(f"{progress_bar*10}%")
                         sys.stdout.flush()
