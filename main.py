@@ -26,7 +26,7 @@ if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
 # Set up cuQuantum logger
-logging.basicConfig(loglevel=30)  # 30=quiet, 20=info, 10=debug
+logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
 
 # Simulation parameters.
 # See docs in: https://cqcl.github.io/pytket-cutensornet/api/modules/mps.html#pytket.extensions.cutensornet.mps.ConfigMPS
