@@ -25,6 +25,9 @@ root = 0
 if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
+# Choose how many minutes separate different checkpoints
+minutes_per_checkpoint = 30
+
 # Set up cuQuantum logger
 logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
 
@@ -136,23 +139,24 @@ ansatz = KernelStateAnsatz(
 	hadamard_init=True
 )
 
-train_info = f"train_f{num_features}_r{reps}_gpus{n_procs}.json"
-test_info = f"test_f{num_features}_r{reps}_gpus{n_procs}.json"
+train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train)
+test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train)
 
 time0 = MPI.Wtime()
-kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, mpi_comm=mpi_comm)
+kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint, mpi_comm=mpi_comm)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
 time0 = MPI.Wtime()
-kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, mpi_comm=mpi_comm)
+kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint, mpi_comm=mpi_comm)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
     print('Test Kernel\n',kernel_test)
+
 #############################
 # Testing the kernel matrix #
 #############################

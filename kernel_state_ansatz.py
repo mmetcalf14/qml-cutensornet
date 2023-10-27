@@ -1,5 +1,6 @@
 import sys
 import json
+import pathlib
 
 from mpi4py import MPI
 from cupy.cuda.runtime import getDeviceCount
@@ -93,7 +94,8 @@ def build_kernel_matrix(
         X,
         Y=None,
         info_file=None,
-        mpi_comm=None
+        minutes_per_checkpoint=None,
+        mpi_comm=None,
     ) -> np.ndarray:
     """Use MPI to parallelise the calculation of entries of the kernel matrix.
 
@@ -115,6 +117,8 @@ def build_kernel_matrix(
             all data points. If not provided it is set to be equal to `X`.
         info_file: The name of the file where to save performance information of this call.
             If not provided, the performance information will only appear in stdout.
+        minutes_per_checkpoint: The amount of time (in minutes) elapsed between different
+            checkpoint saves of the kernel matrix. If None, no checkpoints are saved.
         mpi_comm: The MPI communicator created by the caller of this function. This
             function will attempt to parallelise across all processes within the
             communicator.
@@ -122,6 +126,7 @@ def build_kernel_matrix(
     Returns:
         A kernel matrix of dimensions `len(X)`x`len(Y)`.
     """
+    checkpoint_file = "checkpoint_" + info_file
 
     # MPI information
     root = 0
@@ -230,8 +235,15 @@ def build_kernel_matrix(
         # Enumerate all pairs of circuits to be overlapped
         pairs = [(i, j) for i in range(n_circs) for j in range(n_circs) if i < j]
 
-        # Allocate space for kernel matrix
-        kernel_mat = np.zeros(shape=(n_circs, n_circs))
+        # Try to recover from the last checkpoint (if any)
+        try:
+            # Try to load the kernel matrix from the checkpoint
+            kernel_mat = np.load(checkpoint_file)
+            print(f"\nProcess {rank} recovered from checkpoint!")
+        except:
+            # Allocate space for kernel matrix
+            kernel_mat = np.zeros(shape=(n_circs, n_circs))
+        last_checkpoint_time = MPI.Wtime()
 
         if rank == root:
             print("\nObtaining inner products...")
@@ -247,7 +259,10 @@ def build_kernel_matrix(
             for k in range(rank*pairs_per_proc, (rank+1)*pairs_per_proc):
                 if k >= len(pairs): break
                 
-                if k% 1000 == 0: print(f"Iteration {k} yields data pair {pairs[k]} on process {rank}")
+                # Skip if this value was saved in the checkpoint
+                if kernel_mat[i, j] != 0: continue
+
+                #if k% 1000 == 0: print(f"Iteration {k} yields data pair {pairs[k]} on process {rank}")
                 # Run contraction
                 (i, j) = pairs[k]
                 mps0 = mps_list[i]
@@ -259,6 +274,20 @@ def build_kernel_matrix(
                 timeb = MPI.Wtime()
                 #print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
 
+                # Save a checkpoint if it's time
+                if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < MPI.Wtime():
+                    last_checkpoint_time = MPI.Wtime()
+
+                    # Collect all entries in the root process
+                    kernel_mat = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
+
+                    if rank == root:  # Root process is the one responsible to save it
+                        # Remove the previous checkpoint file
+                        pathlib.Path(checkpoint_file, missing_ok=True).unlink()
+                        # Create a new checkpoint
+                        np.save(checkpoint_file, kernel_mat)
+                        # Inform user
+                        print(f"Checkpoint saved at {checkpoint_file}!")
 
                 # Report back to user
                 if rank == root and progress_bar * progress_checkpoint < k:
@@ -390,8 +419,15 @@ def build_kernel_matrix(
             print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
             profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
 
-        # Allocate space for kernel matrix
-        kernel_mat = np.zeros(shape=(y_circs, x_circs))
+        # Try to recover from the last checkpoint (if any)
+        try:
+            # Try to load the kernel matrix from the checkpoint
+            kernel_mat = np.load(checkpoint_file)
+            print(f"\nProcess {rank} recovered from checkpoint!")
+        except:
+            # Allocate space for kernel matrix
+            kernel_mat = np.zeros(shape=(y_circs, x_circs))
+        last_checkpoint_time = MPI.Wtime()
 
         if rank == root:
             print("\nObtaining inner products...")
@@ -412,11 +448,31 @@ def build_kernel_matrix(
 
                 for j, y_mps in enumerate(y_mps_list):
 
+                    # Skip if this value was saved in the checkpoint
+                    if kernel_mat[j, i + rank*x_circs_per_proc] != 0: continue
+
                     timea = MPI.Wtime()
                     overlap = x_mps.vdot(y_mps)
                     kernel_mat[j, i + rank*x_circs_per_proc] = (overlap*np.conj(overlap)).real
                     timeb = MPI.Wtime()
                     #print(f"[{MPI.Wtime()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
+
+                    # Save a checkpoint if it's time
+                    if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < MPI.Wtime():
+                        last_checkpoint_time = MPI.Wtime()
+
+                        # Collect all entries in the root process
+                        kernel_mat = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
+
+                        if rank == root:  # Root process is the one responsible to save it
+                            # Remove the previous checkpoint file
+                            pathlib.Path(checkpoint_file, missing_ok=True).unlink()
+                            # Create a new checkpoint
+                            np.save(checkpoint_file, kernel_mat)
+                            # Inform user
+                            print(f"Checkpoint saved at {checkpoint_file}!")
+
+                    # Report back to user
                     if rank == root and progress_bar * progress_checkpoint < i:
                         print(f"{progress_bar*10}%")
                         sys.stdout.flush()
@@ -443,5 +499,9 @@ def build_kernel_matrix(
     if info_file is not None and rank == root:
         with open(info_file, 'w') as fp:
             json.dump(profiling_dict, fp, indent=4)
+
+    # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
+    if rank == root:
+        pathlib.Path(checkpoint_file, missing_ok=True).unlink()
 
     return kernel_mat
