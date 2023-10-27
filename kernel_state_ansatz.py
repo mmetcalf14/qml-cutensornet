@@ -155,7 +155,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=8)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate,float_precision=np.float64, chi=8)
                 else:
                     mps = None
                 this_proc_mps.append(mps)
@@ -230,7 +230,8 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             progress_bar, progress_checkpoint = 0, int(np.ceil(pairs_per_proc / 10))
             for k in range(rank*pairs_per_proc, (rank+1)*pairs_per_proc):
                 if k >= len(pairs): break
-
+                
+                if k% 1000 == 0: print(f"Iteration {k} yields data pair {pairs[k]} on process {rank}")
                 # Run contraction
                 (i, j) = pairs[k]
                 mps0 = mps_list[i]
@@ -309,7 +310,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, chi=8)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, float_precision=np.float64, chi=8)
                 else:
                     mps = None
 
