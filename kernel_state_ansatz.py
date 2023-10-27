@@ -10,7 +10,7 @@ from sympy import Symbol
 import cuquantum as cq
 from pytket import Circuit
 from pytket.circuit import PauliExpBox, Pauli
-from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, simulate
+from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, ConfigMPS, simulate
 
 class KernelStateAnsatz:
     """Class that creates and stores a symbolic ansatz circuit and can be used to
@@ -20,8 +20,16 @@ class KernelStateAnsatz:
         ansatz_circ: The symbolic circuit to be used as ansatz.
         feature_symbol_list: The list of symbols in the circuit, each corresponding to a feature.
     """
-    def __init__(self, num_qubits: int, reps: int, gamma: float, entanglement_map: list[tuple[int, int]], hadamard_init: bool=True,
-        onebpaulis: list[Pauli]=[Pauli.Z], twobpaulis: list[tuple[Pauli]]=[(Pauli.X,Pauli.X)]):
+    def __init__(
+        self,
+        num_qubits: int,
+        reps: int,
+        gamma: float,
+        entanglement_map: list[tuple[int, int]],
+        hadamard_init: bool=True,
+        onebpaulis: list[Pauli]=[Pauli.Z],
+        twobpaulis: list[tuple[Pauli]]=[(Pauli.X,Pauli.X)]
+    ):
         """Generate the ansatz circuit and store it. The circuit has as many symbols as qubits, which
         is also the same number of features in the data set. Multiple gates will use the same symbols;
         particularly, 1-qubit gates acting on qubit `i` all use the same symbol, and two qubit gates
@@ -79,7 +87,14 @@ class KernelStateAnsatz:
         return the_circuit
 
 
-def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mpi_comm=None) -> np.ndarray:
+def build_kernel_matrix(
+        config: ConfigMPS,
+        ansatz: KernelStateAnsatz,
+        X,
+        Y=None,
+        info_file=None,
+        mpi_comm=None
+    ) -> np.ndarray:
     """Use MPI to parallelise the calculation of entries of the kernel matrix.
 
     Notes:
@@ -90,6 +105,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
         possible is preferable for matters of efficiency.
 
     Args:
+        config: An instance of ConfigMPS setting the configuration of simulations.
         ansatz: a symbolic circuit describing the ansatz.
         X: A 2D array where `X[i, :]` corresponds to the i-th data point and
             each `X[:, j]` corresponds to the values of the j-th feature across
@@ -155,7 +171,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate,float_precision=np.float64, chi=8)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
                 else:
                     mps = None
                 this_proc_mps.append(mps)
@@ -310,7 +326,7 @@ def build_kernel_matrix(ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mp
             for k, circ in enumerate(this_proc_circs):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, float_precision=np.float64, chi=8)
+                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
                 else:
                     mps = None
 

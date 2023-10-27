@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from mpi4py import MPI
 import sys
+import logging
 
 import sklearn as sl
 from sklearn.model_selection import train_test_split
@@ -10,6 +11,8 @@ from sklearn.svm import SVC
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, roc_auc_score, average_precision_score
 from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
+
+from pytket.extensions.cutensornet.mps import ConfigMPS
 
 mpi_comm = MPI.COMM_WORLD
 rank, n_procs = mpi_comm.Get_rank(), mpi_comm.Get_size()
@@ -22,6 +25,19 @@ root = 0
 if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
+# Set up cuQuantum logger
+logging.basicConfig(loglevel=30)  # 30=quiet, 20=info, 10=debug
+
+# Simulation parameters.
+# See docs in: https://cqcl.github.io/pytket-cutensornet/api/modules/mps.html#pytket.extensions.cutensornet.mps.ConfigMPS
+config = ConfigMPS(
+    chi = 8,
+    float_precision = np.float64,
+#   value_of_zero = 1e-16  # 1e-16 is the default value for np.float64. Uncomment to change it.
+    loglevel = 30,  # pytket-cutensornet logger. 30=quiet, 20=info, 10=debug
+)
+
+# QML model parameters
 num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
 gamma = float(sys.argv[3])
@@ -124,14 +140,14 @@ train_info = f"train_f{num_features}_r{reps}_gpus{n_procs}.json"
 test_info = f"test_f{num_features}_r{reps}_gpus{n_procs}.json"
 
 time0 = MPI.Wtime()
-kernel_train = build_kernel_matrix(ansatz, X = reduced_train_features, info_file=train_info, mpi_comm=mpi_comm)
+kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, mpi_comm=mpi_comm)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
 time0 = MPI.Wtime()
-kernel_test = build_kernel_matrix(ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, mpi_comm=mpi_comm)
+kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, mpi_comm=mpi_comm)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
