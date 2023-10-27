@@ -22,9 +22,6 @@ root = 0
 # Parameters #
 ##############
 
-if len(sys.argv) <= 2:
-    raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
-
 # Choose how many minutes separate different checkpoints
 minutes_per_checkpoint = 30
 
