@@ -137,7 +137,7 @@ ansatz = KernelStateAnsatz(
 )
 
 train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train)
-test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train)
+test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test)
 
 time0 = MPI.Wtime()
 kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint, mpi_comm=mpi_comm)
