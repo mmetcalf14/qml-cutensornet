@@ -126,13 +126,14 @@ def build_kernel_matrix(
     Returns:
         A kernel matrix of dimensions `len(X)`x`len(Y)`.
     """
-    pathlib.Path("tmp").mkdir(exist_ok=True)
-    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file)
-
     # MPI information
     root = 0
     rank, n_procs = mpi_comm.Get_rank(), mpi_comm.Get_size()
     device_id = rank % getDeviceCount()
+
+    # Checkpointing file
+    pathlib.Path("tmp").mkdir(exist_ok=True)
+    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file)
 
     # Dictionary to keep track of profiling information
     if rank == root:
@@ -280,13 +281,12 @@ def build_kernel_matrix(
                 if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < MPI.Wtime():
                     last_checkpoint_time = MPI.Wtime()
 
-                    if rank == root:  # Root process is the one responsible to save it
-                        # Remove the previous checkpoint file
-                        checkpoint_file.unlink(missing_ok=True)
-                        # Create a new checkpoint
-                        np.save(checkpoint_file, kernel_mat)
-                        # Inform user
-                        print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
+                    # Remove the previous checkpoint file
+                    checkpoint_file.unlink(missing_ok=True)
+                    # Create a new checkpoint
+                    np.save(checkpoint_file, kernel_mat)
+                    # Inform user
+                    print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
 
                 # Report back to user
                 if rank == root and progress_bar * progress_checkpoint < k:
@@ -460,13 +460,12 @@ def build_kernel_matrix(
                     if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < MPI.Wtime():
                         last_checkpoint_time = MPI.Wtime()
 
-                        if rank == root:  # Root process is the one responsible to save it
-                            # Remove the previous checkpoint file
-                            checkpoint_file.unlink(missing_ok=True)
-                            # Create a new checkpoint
-                            np.save(checkpoint_file, kernel_mat)
-                            # Inform user
-                            print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
+                        # Remove the previous checkpoint file
+                        checkpoint_file.unlink(missing_ok=True)
+                        # Create a new checkpoint
+                        np.save(checkpoint_file, kernel_mat)
+                        # Inform user
+                        print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
 
                     # Report back to user
                     if rank == root and progress_bar * progress_checkpoint < i:
