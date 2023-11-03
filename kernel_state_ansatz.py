@@ -127,7 +127,7 @@ def build_kernel_matrix(
         A kernel matrix of dimensions `len(X)`x`len(Y)`.
     """
     pathlib.Path("tmp").mkdir(exist_ok=True)
-    checkpoint_file = pathlib.Path("tmp/checkpoint_" + info_file)
+    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file)
 
     # MPI information
     root = 0
@@ -238,16 +238,9 @@ def build_kernel_matrix(
 
         # Try to recover from the last checkpoint (if any)
         if checkpoint_file.is_file():
-            kernel_mat = None
-
-            # Load the kernel matrix from the checkpoint file into the root process
-            if rank == root:
-                kernel_mat = np.load(checkpoint_file)
-            # Broadcast it to all other processes
-            kernel_mat = mpi_comm.bcast(kernel_mat, root=root)
-
-            assert kernel_mat is not None
-            print(f"\nProcess {rank} recovered from checkpoint!")
+            # Load the kernel matrix from the checkpoint file (one per process)
+            kernel_mat = np.load(checkpoint_file)
+            print(f"[Rank {rank}] Recovered from checkpoint!")
         else:
             # Allocate space for kernel matrix
             kernel_mat = np.zeros(shape=(n_circs, n_circs))
@@ -287,16 +280,13 @@ def build_kernel_matrix(
                 if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < MPI.Wtime():
                     last_checkpoint_time = MPI.Wtime()
 
-                    # Collect all entries in the root process
-                    kernel_copy = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
-
                     if rank == root:  # Root process is the one responsible to save it
                         # Remove the previous checkpoint file
                         checkpoint_file.unlink(missing_ok=True)
                         # Create a new checkpoint
-                        np.save(checkpoint_file, kernel_copy)
+                        np.save(checkpoint_file, kernel_mat)
                         # Inform user
-                        print(f"Checkpoint saved at {checkpoint_file}!")
+                        print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
 
                 # Report back to user
                 if rank == root and progress_bar * progress_checkpoint < k:
@@ -430,16 +420,9 @@ def build_kernel_matrix(
 
         # Try to recover from the last checkpoint (if any)
         if checkpoint_file.is_file():
-            kernel_mat = None
-
-            # Load the kernel matrix from the checkpoint
-            if rank == root:
-                kernel_mat = np.load(checkpoint_file)
-            # Broadcast it to all other processes
-            kernel_mat = mpi_comm.bcast(kernel_mat, root=root)
-
-            assert kernel_mat is not None
-            print(f"\nProcess {rank} recovered from checkpoint!")
+            # Load the kernel matrix from the checkpoint (one per process)
+            kernel_mat = np.load(checkpoint_file)
+            print(f"[Rank {rank}] Recovered from checkpoint!")
         else:
             # Allocate space for kernel matrix
             kernel_mat = np.zeros(shape=(y_circs, x_circs))
@@ -477,16 +460,13 @@ def build_kernel_matrix(
                     if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < MPI.Wtime():
                         last_checkpoint_time = MPI.Wtime()
 
-                        # Collect all entries in the root process
-                        kernel_copy = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
-
                         if rank == root:  # Root process is the one responsible to save it
                             # Remove the previous checkpoint file
                             checkpoint_file.unlink(missing_ok=True)
                             # Create a new checkpoint
-                            np.save(checkpoint_file, kernel_copy)
+                            np.save(checkpoint_file, kernel_mat)
                             # Inform user
-                            print(f"Checkpoint saved at {checkpoint_file}!")
+                            print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
 
                     # Report back to user
                     if rank == root and progress_bar * progress_checkpoint < i:
@@ -517,7 +497,6 @@ def build_kernel_matrix(
             json.dump(profiling_dict, fp, indent=4)
 
     # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
-    if rank == root:
-        checkpoint_file.unlink(missing_ok=True)
+    checkpoint_file.unlink(missing_ok=True)
 
     return kernel_mat
