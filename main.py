@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import sys
+import pathlib
+import logging
 import time as t
 
 import sklearn as sl
@@ -13,45 +15,61 @@ import scipy.linalg as la
 
 from pytket.extensions.cutensornet.mps import ConfigMPS
 
+rank = 0
+n_procs = 0
+root = 0
+
 ##############
 # Parameters #
 ##############
 
-if len(sys.argv) <= 2:
-    raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
+# Choose how many minutes separate different checkpoints
+minutes_per_checkpoint = 30
 
-num_features = int(sys.argv[1])
-reps = int(sys.argv[2])
-gamma = 0.1
-entanglement_map = [[i,i+1] for i in range(num_features-1)]
+# Set up cuQuantum logger
+logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
 
+# Simulation parameters.
+# See docs in: https://cqcl.github.io/pytket-cutensornet/api/modules/mps.html#pytket.extensions.cutensornet.mps.ConfigMPS
 config = ConfigMPS(
-    value_of_zero = 1e-15
+    chi = 8,
+    float_precision = np.float64,
+#   value_of_zero = 1e-16  # 1e-16 is the default value for np.float64. Uncomment to change it.
+    loglevel = 30,  # pytket-cutensornet logger. 30=quiet, 20=info, 10=debug
 )
 
-n_illicit_train = 120
-n_licit_train = 120
-n_illicit_test = 120
-n_licit_test = 120
+# QML model parameters
+num_features = int(sys.argv[1])
+reps = int(sys.argv[2])
+gamma = float(sys.argv[3])
+entanglement_map = [[i,i+1] for i in range(num_features-1)]
+
+n_illicit_train = int(sys.argv[4])
+n_licit_train = int(sys.argv[5])
+n_illicit_test = int(sys.argv[6])
+n_licit_test = int(sys.argv[7])
 
 train_size = n_licit_train+n_illicit_train
 test_size = n_licit_test+n_illicit_test
 train_ratio = n_illicit_train/train_size
 test_ratio = n_illicit_test/test_size
 
-print("\nUsing the following parameters:")
-print("")
-print(f"\tnum_features: {num_features}")
-print(f"\treps: {reps}")
-print(f"\tgamma: {gamma}")
-print(f"\tentanglement_map: {entanglement_map}")
-print("")
-print(f"\tn_illicit_train: {n_illicit_train}")
-print(f"\tn_licit_train: {n_licit_train}")
-print(f"\tn_illicit_test: {n_illicit_test}")
-print(f"\tn_licit_test: {n_licit_test}")
-print("")
-sys.stdout.flush()
+if rank == root:
+    print("\nUsing the following parameters:")
+    print("")
+    print(f"\tn_procs: {n_procs}")
+    print("")
+    print(f"\tnum_features: {num_features}")
+    print(f"\treps: {reps}")
+    print(f"\tgamma: {gamma}")
+    print(f"\tentanglement_map: {entanglement_map}")
+    print("")
+    print(f"\tn_illicit_train: {n_illicit_train}")
+    print(f"\tn_licit_train: {n_licit_train}")
+    print(f"\tn_illicit_test: {n_illicit_test}")
+    print(f"\tn_licit_test: {n_licit_test}")
+    print("")
+    sys.stdout.flush()
 
 #########################
 # Load data and prepare #
@@ -110,47 +128,78 @@ reduced_test_features = test_features[:,0:num_features]
 # Construction of kernel matrix #
 #################################
 
+pathlib.Path("kernels").mkdir(exist_ok=True)
+pathlib.Path("data").mkdir(exist_ok=True)
+
 # Create the ansatz class
 ansatz = KernelStateAnsatz(
-    num_qubits=num_features,
-    reps=reps,
-    gamma=gamma,
-    entanglement_map=entanglement_map,
-    hadamard_init=True
+	num_qubits=num_features,
+	reps=reps,
+	gamma=gamma,
+	entanglement_map=entanglement_map,
+	hadamard_init=True
 )
 
-train_info = f"train_f{num_features}_r{reps}_gpus1.json"
-test_info = f"test_f{num_features}_r{reps}_gpus1.json"
+train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train)
+test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test)
 
 time0 = t.time()
-kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info)
+kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = t.time()
-print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
+if rank == root:
+    print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
+    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
 time0 = t.time()
-kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info)
+kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = t.time()
-print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
+if rank == root:
+    print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
+    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
+    print('Test Kernel\n',kernel_test)
 
 #############################
 # Testing the kernel matrix #
 #############################
 
-reg = [2,1.5,1,0.5,0.1,0.05,0.01]
-test_results = []
-for key, r in enumerate(reg):
-    print('coeff: ', r)
-    svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
-    # scale might work best as 1/Nfeautres
+if rank == root:
+    reg = [2,1.5,1,0.5,0.1,0.05,0.01]
+    test_results = []
+    for key, r in enumerate(reg):
+        print('coeff: ', r)
+        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+        # scale might work best as 1/Nfeautres
 
-    svc.fit(kernel_train, train_labels)
-    test_predict = svc.predict(kernel_test)
-    accuracy = accuracy_score(test_labels,test_predict)
-    print('accuracy: ', accuracy)
-    precision = precision_score(test_labels,test_predict)
-    print('precision: ', precision)
-    recall = recall_score(test_labels, test_predict)
-    print('recall: ', recall)
-    auc = roc_auc_score(test_labels, test_predict)
-    print('auc: ', auc)
-    test_results.append([r,accuracy, precision, recall, auc])
+        svc.fit(kernel_train, train_labels)
+        test_predict = svc.predict(kernel_test)
+        accuracy = accuracy_score(test_labels,test_predict)
+        print('accuracy: ', accuracy)
+        precision = precision_score(test_labels,test_predict)
+        print('precision: ', precision)
+        recall = recall_score(test_labels, test_predict)
+        print('recall: ', recall)
+        auc = roc_auc_score(test_labels, test_predict)
+        print('auc: ', auc)
+        test_results.append([r,accuracy, precision, recall, auc])
+
+    train_results = []
+    print('\n Train Results\n')
+    for key, r in enumerate(reg):
+        print('coeff: ', r)
+        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+        # scale might work best as 1/Nfeautres
+
+        svc.fit(kernel_train, train_labels)
+        test_predict = svc.predict(kernel_train)
+        accuracy = accuracy_score(train_labels,test_predict)
+        print('accuracy: ', accuracy)
+        precision = precision_score(train_labels,test_predict)
+        print('precision: ', precision)
+        recall = recall_score(train_labels, test_predict)
+        print('recall: ', recall)
+        auc = roc_auc_score(train_labels, test_predict)
+        print('auc: ', auc)
+        train_results.append([r,accuracy, precision, recall, auc])
+
+    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_train),train_results)
+    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_test),test_results)
