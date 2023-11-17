@@ -16,7 +16,6 @@ import scipy.linalg as la
 from pytket.extensions.cutensornet.mps import ConfigMPS
 
 rank = 0
-n_procs = 0
 root = 0
 
 ##############
@@ -56,8 +55,6 @@ test_ratio = n_illicit_test/test_size
 
 if rank == root:
     print("\nUsing the following parameters:")
-    print("")
-    print(f"\tn_procs: {n_procs}")
     print("")
     print(f"\tnum_features: {num_features}")
     print(f"\treps: {reps}")
