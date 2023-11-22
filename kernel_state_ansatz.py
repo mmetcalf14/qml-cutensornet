@@ -3,15 +3,13 @@ import json
 import pathlib
 import time as t
 
-from cupy.cuda.runtime import getDeviceCount
-
 import numpy as np
 from sympy import Symbol
 
-import cuquantum as cq
 from pytket import Circuit
 from pytket.circuit import PauliExpBox, Pauli
-from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, ConfigMPS, simulate
+
+from quimb_mps import Config, simulate
 
 class KernelStateAnsatz:
     """Class that creates and stores a symbolic ansatz circuit and can be used to
@@ -28,8 +26,6 @@ class KernelStateAnsatz:
         gamma: float,
         entanglement_map: list[tuple[int, int]],
         hadamard_init: bool=True,
-        onebpaulis: list[Pauli]=[Pauli.Z],
-        twobpaulis: list[tuple[Pauli]]=[(Pauli.X,Pauli.X)]
     ):
         """Generate the ansatz circuit and store it. The circuit has as many symbols as qubits, which
         is also the same number of features in the data set. Multiple gates will use the same symbols;
@@ -44,8 +40,6 @@ class KernelStateAnsatz:
                 for now limit entanglement only to two body terms
             hadamard_init: whether a layer of H gates should be applied to all qubits
                 at the beginning of the circuit.
-            onebpaulis: single-qubit Pauli operators for the circuit
-            twobpaulis: two-qubit Pauli operators for the circuit
         """
 
         self.one_q_symbol_list = []
@@ -59,21 +53,15 @@ class KernelStateAnsatz:
                 self.ansatz_circ.H(i)
 
         for _ in range(reps):
-            for pauli in onebpaulis:
-                for i in range(num_qubits):
-                    exponent = (1/np.pi)*gamma*self.feature_symbol_list[i]
-                    self.ansatz_circ.add_pauliexpbox(
-                        PauliExpBox([pauli], exponent), qubits=[i]
-                    )
+            for i in range(num_qubits):
+                exponent = (1/np.pi)*gamma*self.feature_symbol_list[i]
+                self.ansatz_circ.Rz(exponent, i)
 
-            for (pauli0, pauli1) in twobpaulis:
-                for (q0, q1) in entanglement_map:
-                    symb0 = self.feature_symbol_list[q0]
-                    symb1 = self.feature_symbol_list[q1]
-                    exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
-                    self.ansatz_circ.add_pauliexpbox(
-                        PauliExpBox([pauli0, pauli1], exponent), qubits=[q0, q1]
-                    )
+            for (q0, q1) in entanglement_map:
+                symb0 = self.feature_symbol_list[q0]
+                symb1 = self.feature_symbol_list[q1]
+                exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
+                self.ansatz_circ.XXPhase(exponent, q0, q1)
 
     def circuit_for_data(self, feature_values: list[float]) -> Circuit:
         """Produce the circuit with its symbols being replaced by the given values.
@@ -89,7 +77,7 @@ class KernelStateAnsatz:
 
 
 def build_kernel_matrix(
-        config: ConfigMPS,
+        config: Config,
         ansatz: KernelStateAnsatz,
         X,
         Y=None,
@@ -168,22 +156,21 @@ def build_kernel_matrix(
 
         # Contract the MPS of each of the circuits in this process
         this_proc_mps = []
-        with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
-            progress_bar = 0
-            progress_checkpoint = int(np.ceil(len(this_proc_circs) / 10))
+        progress_bar = 0
+        progress_checkpoint = int(np.ceil(len(this_proc_circs) / 10))
 
-            for k, circ in enumerate(this_proc_circs):
-                # Simulate the circuit and obtain the output state as an MPS
-                if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
-                else:
-                    mps = None
-                this_proc_mps.append(mps)
+        for k, circ in enumerate(this_proc_circs):
+            # Simulate the circuit and obtain the output state as an MPS
+            if circ is not None:
+                mps = simulate(circ, config)
+            else:
+                mps = None
+            this_proc_mps.append(mps)
 
-                if rank == root and progress_bar * progress_checkpoint < k:
-                    print(f"{progress_bar*10}%")
-                    sys.stdout.flush()
-                    progress_bar += 1
+            if rank == root and progress_bar * progress_checkpoint < k:
+                print(f"{progress_bar*10}%")
+                sys.stdout.flush()
+                progress_bar += 1
 
         if rank == root:
             time1 = t.time()
@@ -195,12 +182,12 @@ def build_kernel_matrix(
             print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
             profiling_dict["avg_circ_sim"] = (average, "seconds")
 
-            mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in this_proc_mps]
-            total_bytes = sum(mps_byte_size) / (1024**2)
-            print(f"[Rank 0] Total memory currently used: {round(total_bytes,2)} MiB")
-            avg_bytes_per_mps = total_bytes / len(mps_byte_size)
-            print(f"\tAverage MPS memory footprint: {round(avg_bytes_per_mps,2)} MiB")
-            profiling_dict["avg_mps_mem"] = (avg_bytes_per_mps, "MiB")
+            #mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in this_proc_mps]
+            #total_bytes = sum(mps_byte_size) / (1024**2)
+            #print(f"[Rank 0] Total memory currently used: {round(total_bytes,2)} MiB")
+            #avg_bytes_per_mps = total_bytes / len(mps_byte_size)
+            #print(f"\tAverage MPS memory footprint: {round(avg_bytes_per_mps,2)} MiB")
+            #profiling_dict["avg_mps_mem"] = (avg_bytes_per_mps, "MiB")
 
             print("\nBroadcasting the MPS of the circuits.")
             sys.stdout.flush()
@@ -213,10 +200,10 @@ def build_kernel_matrix(
             print(f"[Rank 0] MPS broadcasted in {round(time1-time0,2)} seconds")
             profiling_dict["r0_broadcast"] = (time1-time0, "seconds")
 
-            mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in mps_list]
-            total_bytes = sum(mps_byte_size) / (1024**2)
-            print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
-            profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
+            #mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in mps_list]
+            #total_bytes = sum(mps_byte_size) / (1024**2)
+            #print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
+            #profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
 
         # Enumerate all pairs of circuits to be overlapped
         pairs = [(i, j) for i in range(n_circs) for j in range(n_circs) if i < j]
@@ -236,47 +223,43 @@ def build_kernel_matrix(
             time0 = t.time()
 
         # Parallelise across all available processes
-        with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
-            for mps in mps_list:
-                mps.update_libhandle(libhandle)
+        pairs_per_proc = int(np.ceil(len(pairs) / n_procs))
+        progress_bar, progress_checkpoint = 0, int(np.ceil(pairs_per_proc / 10))
+        for k in range(rank*pairs_per_proc, (rank+1)*pairs_per_proc):
 
-            pairs_per_proc = int(np.ceil(len(pairs) / n_procs))
-            progress_bar, progress_checkpoint = 0, int(np.ceil(pairs_per_proc / 10))
-            for k in range(rank*pairs_per_proc, (rank+1)*pairs_per_proc):
+            if k >= len(pairs): break
 
-                if k >= len(pairs): break
+            # Skip if this value was saved in the checkpoint
+            (i, j) = pairs[k]
+            if kernel_mat[i, j] != 0: continue
 
-                # Skip if this value was saved in the checkpoint
-                (i, j) = pairs[k]
-                if kernel_mat[i, j] != 0: continue
+            #if k% 1000 == 0: print(f"Iteration {k} yields data pair {pairs[k]} on process {rank}")
+            # Run contraction
+            mps0 = mps_list[i]
+            mps1 = mps_list[j]
 
-                #if k% 1000 == 0: print(f"Iteration {k} yields data pair {pairs[k]} on process {rank}")
-                # Run contraction
-                mps0 = mps_list[i]
-                mps1 = mps_list[j]
+            timea = t.time()
+            overlap = mps0.psi.H @ mps1.psi
+            kernel_mat[i, j] = kernel_mat[j, i] = (overlap*np.conj(overlap)).real
+            timeb = t.time()
+            #print(f"[{t.time()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
 
-                timea = t.time()
-                overlap = mps0.vdot(mps1)
-                kernel_mat[i, j] = kernel_mat[j, i] = (overlap*np.conj(overlap)).real
-                timeb = t.time()
-                #print(f"[{t.time()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
+            # Save a checkpoint if it's time
+            if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < t.time():
+                last_checkpoint_time = t.time()
 
-                # Save a checkpoint if it's time
-                if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < t.time():
-                    last_checkpoint_time = t.time()
+                # Remove the previous checkpoint file
+                checkpoint_file.unlink(missing_ok=True)
+                # Create a new checkpoint
+                np.save(checkpoint_file, kernel_mat)
+                # Inform user
+                print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
 
-                    # Remove the previous checkpoint file
-                    checkpoint_file.unlink(missing_ok=True)
-                    # Create a new checkpoint
-                    np.save(checkpoint_file, kernel_mat)
-                    # Inform user
-                    print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
-
-                # Report back to user
-                if rank == root and progress_bar * progress_checkpoint < k:
-                    print(f"{progress_bar*10}%")
-                    sys.stdout.flush()
-                    progress_bar += 1
+            # Report back to user
+            if rank == root and progress_bar * progress_checkpoint < k:
+                print(f"{progress_bar*10}%")
+                sys.stdout.flush()
+                progress_bar += 1
 
         if rank == root:
             time1 = t.time()
@@ -328,44 +311,43 @@ def build_kernel_matrix(
         # Contract the MPS of each of the circuits in this process
         this_proc_x_mps = []
         this_proc_y_mps = []
-        with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
-            progress_bar = 0
-            this_proc_circs = this_proc_x_circs + this_proc_y_circs
-            progress_checkpoint = int(np.ceil(len(this_proc_circs) / 10))
+        progress_bar = 0
+        this_proc_circs = this_proc_x_circs + this_proc_y_circs
+        progress_checkpoint = int(np.ceil(len(this_proc_circs) / 10))
 
-            for k, circ in enumerate(this_proc_circs):
-                # Simulate the circuit and obtain the output state as an MPS
-                if circ is not None:
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
-                else:
-                    mps = None
+        for k, circ in enumerate(this_proc_circs):
+            # Simulate the circuit and obtain the output state as an MPS
+            if circ is not None:
+                mps = simulate(circ, config)
+            else:
+                mps = None
 
-                if k < len(this_proc_x_circs):
-                    this_proc_x_mps.append(mps)
-                else:
-                    this_proc_y_mps.append(mps)
+            if k < len(this_proc_x_circs):
+                this_proc_x_mps.append(mps)
+            else:
+                this_proc_y_mps.append(mps)
 
-                if rank == root and progress_bar * progress_checkpoint < k:
-                    print(f"{progress_bar*10}%")
-                    sys.stdout.flush()
-                    progress_bar += 1
+            if rank == root and progress_bar * progress_checkpoint < k:
+                print(f"{progress_bar*10}%")
+                sys.stdout.flush()
+                progress_bar += 1
 
         if rank == root:
             time1 = t.time()
             print("100%")
             duration = time1-time0
-            print(f"[Rank 0]  MPS contracted. Time taken: {round(duration,2)} seconds.")
+            print(f"[Rank 0] MPS contracted. Time taken: {round(duration,2)} seconds.")
             profiling_dict["r0_circ_sim"] = (duration, "seconds")
             average = duration / (x_circs_per_proc + y_circs_per_proc)
             print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
             profiling_dict["avg_circ_sim"] = (average, "seconds")
 
-            mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in this_proc_x_mps + this_proc_y_mps]
-            total_bytes = sum(mps_byte_size) / (1024**2)
-            print(f"[Rank 0] Total memory currently used: {round(total_bytes,2)} MiB")
-            avg_bytes_per_mps = total_bytes / len(mps_byte_size)
-            print(f"\tAverage MPS memory footprint: {round(avg_bytes_per_mps,2)} MiB")
-            profiling_dict["avg_mps_mem"] = (avg_bytes_per_mps, "MiB")
+            #mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in this_proc_x_mps + this_proc_y_mps]
+            #total_bytes = sum(mps_byte_size) / (1024**2)
+            #print(f"[Rank 0] Total memory currently used: {round(total_bytes,2)} MiB")
+            #avg_bytes_per_mps = total_bytes / len(mps_byte_size)
+            #print(f"\tAverage MPS memory footprint: {round(avg_bytes_per_mps,2)} MiB")
+            #profiling_dict["avg_mps_mem"] = (avg_bytes_per_mps, "MiB")
 
             print("\nBroadcasting the MPS of the circuits.")
             sys.stdout.flush()
@@ -382,10 +364,10 @@ def build_kernel_matrix(
             print(f"[Rank 0] MPS broadcasted in {round(time1-time0,2)} seconds")
             profiling_dict["r0_broadcast"] = (time1-time0, "seconds")
 
-            mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in this_proc_x_mps + y_mps_list]
-            total_bytes = sum(mps_byte_size) / (1024**2)
-            print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
-            profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
+            #mps_byte_size = [sum(t.nbytes for t in mps.tensors) for mps in this_proc_x_mps + y_mps_list]
+            #total_bytes = sum(mps_byte_size) / (1024**2)
+            #print(f"Total MPS memory used per GPU: {round(total_bytes,2)} MiB")
+            #profiling_dict["gpu_mps_mem"] = (total_bytes, "MiB")
 
         # Try to recover from the last checkpoint (if any)
         if checkpoint_file.is_file():
@@ -406,41 +388,34 @@ def build_kernel_matrix(
         progress_bar = 0
         progress_checkpoint = int(np.ceil(len(this_proc_x_mps) / 10))
 
-        with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
+        for i, x_mps in enumerate(this_proc_x_mps):
+            for j, y_mps in enumerate(y_mps_list):
 
-            for y_mps in y_mps_list:
-                y_mps.update_libhandle(libhandle)
+                # Skip if this value was saved in the checkpoint
+                if kernel_mat[j, i + rank*x_circs_per_proc] != 0: continue
 
-            for i, x_mps in enumerate(this_proc_x_mps):
-                x_mps.update_libhandle(libhandle)
+                timea = t.time()
+                overlap = x_mps.psi.H @ y_mps.psi
+                kernel_mat[j, i + rank*x_circs_per_proc] = (overlap*np.conj(overlap)).real
+                timeb = t.time()
+                #print(f"[{t.time()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
 
-                for j, y_mps in enumerate(y_mps_list):
+                # Save a checkpoint if it's time
+                if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < t.time():
+                    last_checkpoint_time = t.time()
 
-                    # Skip if this value was saved in the checkpoint
-                    if kernel_mat[j, i + rank*x_circs_per_proc] != 0: continue
+                    # Remove the previous checkpoint file
+                    checkpoint_file.unlink(missing_ok=True)
+                    # Create a new checkpoint
+                    np.save(checkpoint_file, kernel_mat)
+                    # Inform user
+                    print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
 
-                    timea = t.time()
-                    overlap = x_mps.vdot(y_mps)
-                    kernel_mat[j, i + rank*x_circs_per_proc] = (overlap*np.conj(overlap)).real
-                    timeb = t.time()
-                    #print(f"[{t.time()}] Took {timeb - timea} seconds on process {rank}, device {device_id}.")
-
-                    # Save a checkpoint if it's time
-                    if minutes_per_checkpoint is not None and last_checkpoint_time + 60*minutes_per_checkpoint < t.time():
-                        last_checkpoint_time = t.time()
-
-                        # Remove the previous checkpoint file
-                        checkpoint_file.unlink(missing_ok=True)
-                        # Create a new checkpoint
-                        np.save(checkpoint_file, kernel_mat)
-                        # Inform user
-                        print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
-
-                    # Report back to user
-                    if rank == root and progress_bar * progress_checkpoint < i:
-                        print(f"{progress_bar*10}%")
-                        sys.stdout.flush()
-                        progress_bar += 1
+                # Report back to user
+                if rank == root and progress_bar * progress_checkpoint < i:
+                    print(f"{progress_bar*10}%")
+                    sys.stdout.flush()
+                    progress_bar += 1
 
         if rank == root:
             time1 = t.time()

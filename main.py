@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import sys
 import pathlib
-import logging
 import time as t
 
 import sklearn as sl
@@ -13,7 +12,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
 from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
-from pytket.extensions.cutensornet.mps import ConfigMPS
+from quimb_mps import Config
 
 rank = 0
 root = 0
@@ -25,16 +24,10 @@ root = 0
 # Choose how many minutes separate different checkpoints
 minutes_per_checkpoint = 30
 
-# Set up cuQuantum logger
-logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
-
 # Simulation parameters.
-# See docs in: https://cqcl.github.io/pytket-cutensornet/api/modules/mps.html#pytket.extensions.cutensornet.mps.ConfigMPS
-config = ConfigMPS(
+config = Config(
     chi = 8,
-    float_precision = np.float64,
-#   value_of_zero = 1e-16  # 1e-16 is the default value for np.float64. Uncomment to change it.
-    loglevel = 30,  # pytket-cutensornet logger. 30=quiet, 20=info, 10=debug
+    value_of_zero = 1e-16
 )
 
 # QML model parameters
