@@ -13,8 +13,6 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
 from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
-from pytket.extensions.cutensornet.mps import ConfigMPS
-
 rank = 0
 root = 0
 
@@ -22,20 +20,12 @@ root = 0
 # Parameters #
 ##############
 
-# Choose how many minutes separate different checkpoints
-minutes_per_checkpoint = 30
-
 # Set up cuQuantum logger
 logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
 
 # Simulation parameters.
-# See docs in: https://cqcl.github.io/pytket-cutensornet/api/modules/mps.html#pytket.extensions.cutensornet.mps.ConfigMPS
-config = ConfigMPS(
-    chi = 8,
-    float_precision = np.float64,
-#   value_of_zero = 1e-16  # 1e-16 is the default value for np.float64. Uncomment to change it.
-    loglevel = 30,  # pytket-cutensornet logger. 30=quiet, 20=info, 10=debug
-)
+value_of_zero = 1e-16
+n_tiles = None  # Use default choice
 
 # QML model parameters
 num_features = int(sys.argv[1])
@@ -137,18 +127,31 @@ ansatz = KernelStateAnsatz(
 	hadamard_init=True
 )
 
-train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train)
-test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test)
+train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_train)
+test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_test)
 
 time0 = t.time()
-kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
+kernel_train = build_kernel_matrix(
+    ansatz,
+    X=reduced_train_features,
+    info_file=train_info,
+    value_of_zero=value_of_zero,
+    number_of_tiles=n_tiles,
+)
 time1 = t.time()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
 time0 = t.time()
-kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
+kernel_test = build_kernel_matrix(
+    ansatz,
+    X=reduced_train_features,
+    Y=reduced_test_features,
+    info_file=test_info,
+    value_of_zero=value_of_zero,
+    number_of_tiles=n_tiles,
+)
 time1 = t.time()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
