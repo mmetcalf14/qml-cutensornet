@@ -1,9 +1,9 @@
 from typing import Optional
+from mpi4py import MPI
 
 import sys
 import json
 import pathlib
-import time as t
 from statistics import median
 
 import numpy as np
@@ -13,7 +13,7 @@ from pytket import Circuit
 from pytket.circuit import OpType
 
 from julia.api import Julia
-jl = Julia(compiled_modules=False)  # TODO: Hopefully, this can be avoided
+jl = Julia(compiled_modules=False)  # TODO: Hopefully this can be avoided
 from julia import KernelPkg
 
 class KernelStateAnsatz:
@@ -99,6 +99,7 @@ class KernelStateAnsatz:
 
 
 def build_kernel_matrix(
+        mpi_comm,
         ansatz: KernelStateAnsatz,
         X,
         Y=None,
@@ -113,7 +114,8 @@ def build_kernel_matrix(
         possible is preferable for matters of efficiency.
 
     Args:
-        ansatz: a symbolic circuit describing the ansatz.
+        mpi_comm: The MPI communicator.
+        ansatz: A symbolic circuit describing the ansatz.
         X: A 2D array where `X[i, :]` corresponds to the i-th data point and
             each `X[:, j]` corresponds to the values of the j-th feature across
             all data points.
@@ -134,8 +136,8 @@ def build_kernel_matrix(
     """
 
     # MPI variables
-    rank = 0
-    n_procs = 1
+    n_procs = mpi_comm.Get_size()
+    rank = mpi_comm.Get_rank()
     root = 0
 
     # Distribution strategy parameters.
@@ -195,11 +197,11 @@ def build_kernel_matrix(
         kernel_mat = np.load(checkpoint_file)
         print(f"[Rank {rank}] Recovered from checkpoint!")
     else:  # Otherwise, allocate space for kernel matrix
-        kernel_mat = np.empty(shape=(lenY, lenX)) * np.nan
+        kernel_mat = np.zeros(shape=(lenY, lenX))
 
     # Each process picks a tile and computes it
     tile_times = []
-    start_time = t.time()
+    start_time = MPI.Wtime()
     for k, (y_slice, x_slice) in enumerate(tiles):
         if k % n_procs == rank:  # Otherwise, this process is not meant to compute this tile
 
@@ -209,9 +211,9 @@ def build_kernel_matrix(
                 sys.stdout.flush()
 
             # Check if the tile has already been computed in the checkpoint
-            if not np.isnan(kernel_mat[y_slice[0], x_slice[0]]):
+            if kernel_mat[y_slice[0], x_slice[0]] != 0:
                 continue  # If so, skip this iteration
-            time0 = t.time()
+            time0 = MPI.Wtime()
 
             # Otherwise, compute the tile
             tile_ix = np.ix_(range(*y_slice), range(*x_slice))
@@ -229,7 +231,7 @@ def build_kernel_matrix(
                 kernel_mat[tile_T_ix] = kernel_mat[tile_ix].T
 
             # Record the time
-            tile_times.append(t.time() - time0)
+            tile_times.append(MPI.Wtime() - time0)
 
             # Remove the previous checkpoint file
             checkpoint_file.unlink(missing_ok=True)
@@ -239,12 +241,12 @@ def build_kernel_matrix(
             #print(f"Checkpoint saved at {checkpoint_file}!")
 
     # Combine the kernel matrices of all processes
-    # TODO
+    kernel_mat = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
 
     # Record time
     if rank == root:
         print("100%")
-        end_time = t.time()
+        end_time = MPI.Wtime()
         total_time = end_time - start_time
         profiling_dict["total_time"] = (total_time, "seconds")
 

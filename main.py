@@ -1,9 +1,10 @@
+from mpi4py import MPI
+
 import numpy as np
 import pandas as pd
 import sys
 import pathlib
 import logging
-import time as t
 
 import sklearn as sl
 from sklearn.model_selection import train_test_split
@@ -13,7 +14,8 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
 from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
-rank = 0
+mpi_comm = MPI.COMM_WORLD
+rank = mpi_comm.Get_rank()
 root = 0
 
 ##############
@@ -130,21 +132,23 @@ ansatz = KernelStateAnsatz(
 train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_train)
 test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_test)
 
-time0 = t.time()
+time0 = MPI.Wtime()
 kernel_train = build_kernel_matrix(
+    mpi_comm,
     ansatz,
     X=reduced_train_features,
     info_file=train_info,
     value_of_zero=value_of_zero,
     number_of_tiles=n_tiles,
 )
-time1 = t.time()
+time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
-time0 = t.time()
+time0 = MPI.Wtime()
 kernel_test = build_kernel_matrix(
+    mpi_comm,
     ansatz,
     X=reduced_train_features,
     Y=reduced_test_features,
@@ -152,7 +156,7 @@ kernel_test = build_kernel_matrix(
     value_of_zero=value_of_zero,
     number_of_tiles=n_tiles,
 )
-time1 = t.time()
+time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
