@@ -25,7 +25,7 @@ logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
 
 # Simulation parameters.
 value_of_zero = 1e-16
-n_tiles = None  # Use default choice
+n_tiles = 1#None  # Use default choice
 
 # QML model parameters
 num_features = int(sys.argv[1])
@@ -156,14 +156,16 @@ time1 = t.time()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
-    print('Test Kernel\n',kernel_test)
+#    print('Test Kernel\n',kernel_test)
+    print('shape: ', np.shape(kernel_train))
+    print('Train Kernel\n',kernel_train)
 
 #############################
 # Testing the kernel matrix #
 #############################
 
 if rank == root:
-    reg = [2,1.5,1,0.5,0.1,0.05,0.01]
+    reg = [4,3.5,3,2.5,2,1.5,1,0.5,0.1,0.05,0.01]
     test_results = []
     for key, r in enumerate(reg):
         print('coeff: ', r)
