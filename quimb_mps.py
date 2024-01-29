@@ -3,13 +3,14 @@ from pytket.circuit import Circuit, OpType
 import math
 
 from quimb.tensor.circuit import CircuitMPS
+from quimb.tensor import MatrixProductState
 
 class Config(NamedTuple):
     chi: int
     value_of_zero: float
 
 
-def simulate(circ: Circuit, config: Config) -> CircuitMPS:
+def simulate(circ: Circuit, config: Config) -> MatrixProductState:
     """Simulate the circuit via MPS using Quimb on numpy backend.
     """
 
@@ -31,6 +32,6 @@ def simulate(circ: Circuit, config: Config) -> CircuitMPS:
             raise Exception(f"Unknown gate {gate.op.type}")
 
     mps.psi.compress(max_bond=config.chi, cutoff=config.value_of_zero, cutoff_mode="abs")
-    return mps
+    return mps.psi
 
 

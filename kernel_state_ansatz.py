@@ -124,6 +124,7 @@ def build_kernel_matrix(
     """
     if Y is not None and len(X) < len(Y):
         raise ValueError("X must not be smaller than Y. Swap input order and transpose output.")
+    n_qubits = ansatz.ansatz_circ.n_qubits
 
     # MPI information
     root = 0
@@ -132,7 +133,7 @@ def build_kernel_matrix(
 
     entries_per_chunk = int(np.ceil(len(X) / n_procs))
     max_mps_per_cpu = 2*entries_per_chunk  # X + Y chunks
-    max_chi = int(np.sqrt(cpu_max_mem*10**3 / (32*n_qubits*max_mps_per_cpu)))
+    max_chi = int(np.sqrt(cpu_max_mem*10**9 / (32*n_qubits*max_mps_per_cpu)))
     if config.chi > max_chi:
         raise ValueError(
             f"Selected bond dimension ({config.chi}) is too large. "
@@ -228,6 +229,7 @@ def build_kernel_matrix(
 
         if Y is not None:
             print("\nContracting the MPS of the circuits from the Y dataset...")
+            print(f"\tUsing chi = {config.chi}")
         sys.stdout.flush()
         time0 = MPI.Wtime()
 
@@ -375,7 +377,7 @@ def build_kernel_matrix(
         # Report back to user
         if rank == root:
             duration = MPI.Wtime() - time0
-            print(f"\t[Rank 0] Round robin completed in {round(duration,2)} seconds")
+            print(f"\t[Rank 0] Round robin message passing completed in {round(duration,2)} seconds")
             profiling_dict["r0_RR_recv"][0] += duration
 
     # Collect the tiles of all CPUs into a the final kernel matrix
@@ -398,7 +400,7 @@ def build_kernel_matrix(
         if info_file is not None:
             with open(info_file + ".json", 'w') as fp:
                 json.dump(profiling_dict, fp, indent=4)
-            print(f"Profiling information saved at {info_file + ".json"}.\n")
+            print(f"Profiling information saved at {info_file}.json.\n")
 
     # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
     checkpoint_file.unlink(missing_ok=True)

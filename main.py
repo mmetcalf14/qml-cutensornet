@@ -51,6 +51,8 @@ test_ratio = n_illicit_test/test_size
 if rank == root:
     print("\nUsing the following parameters:")
     print("")
+    print(f"\tn_procs: {n_procs}")
+    print("")
     print(f"\tnum_features: {num_features}")
     print(f"\treps: {reps}")
     print(f"\tgamma: {gamma}")
@@ -135,16 +137,16 @@ ansatz = KernelStateAnsatz(
 train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_train)
 test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_test)
 
-time0 = t.time()
+time0 = MPI.Wtime()
 kernel_train = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
-time1 = t.time()
+time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
-time0 = t.time()
+time0 = MPI.Wtime()
 kernel_test = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
-time1 = t.time()
+time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
