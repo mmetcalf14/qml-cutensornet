@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import sys
 import pathlib
-import time as t
+from mpi4py import MPI
 
 import sklearn as sl
 from sklearn.model_selection import train_test_split
@@ -14,7 +14,9 @@ import scipy.linalg as la
 
 from quimb_mps import Config
 
-rank = 0
+mpi_comm = MPI.COMM_WORLD
+rank = mpi_comm.Get_rank()
+n_procs = mpi_comm.Get_size()
 root = 0
 
 ##############
@@ -134,14 +136,14 @@ train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma
 test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test)
 
 time0 = t.time()
-kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
+kernel_train = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = t.time()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
 
 time0 = t.time()
-kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
+kernel_test = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = t.time()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
