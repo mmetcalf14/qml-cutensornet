@@ -116,7 +116,7 @@ def build_kernel_matrix(
             checkpoint saves of the kernel matrix. If None, no checkpoints are saved.
 
     Returns:
-        A kernel matrix of dimensions `len(X)`x`len(Y)`.
+        A kernel matrix of dimensions `len(Y)`x`len(X)`.
 
     Raises:
         ValueError: It is assumed that `len(Y) <= len(X)`. If this is not the case,
@@ -175,8 +175,8 @@ def build_kernel_matrix(
 
     # Generate the circuis of the Y chunk (if Y != X)
     if Y is not None:
-    # Tiles will always be squares of width at most `entries_per_chunk`.
-    # If it is not completely filled there will be some `None` entries at the end.
+        # Tiles will always be squares of width at most `entries_per_chunk`.
+        # If it is not completely filled there will be some `None` entries at the end.
         circs_y_chunk = [None]*entries_per_chunk
 
         # Only generate the circuits for the CPUs that participate in round robin
@@ -287,7 +287,7 @@ def build_kernel_matrix(
         kernel_mat = np.zeros(shape=(len_Y, len(X)))
     last_checkpoint_time = MPI.Wtime()
 
-    # Compute tiles of the kernel-matrix and pass the Y chunks around in round robin
+    # Compute tiles of the kernel matrix and pass the Y chunks around in round robin
     if Y is not None:
         iterations = y_chunks
     else:
@@ -367,6 +367,7 @@ def build_kernel_matrix(
             np.save(checkpoint_file, kernel_mat)
             # Inform user
             print(f"[Rank {rank}] Checkpoint saved at {checkpoint_file}!")
+            sys.stdout.flush()
 
         # Perform message passing in round robin
         if rank < n_procs_in_RR:  # The last few CPUs don't participate
@@ -378,6 +379,7 @@ def build_kernel_matrix(
         if rank == root:
             duration = MPI.Wtime() - time0
             print(f"\t[Rank 0] Round robin message passing completed in {round(duration,2)} seconds")
+            sys.stdout.flush()
             profiling_dict["r0_RR_recv"][0] += duration
 
     # Collect the tiles of all CPUs into a the final kernel matrix
@@ -401,6 +403,7 @@ def build_kernel_matrix(
             with open(info_file + ".json", 'w') as fp:
                 json.dump(profiling_dict, fp, indent=4)
             print(f"Profiling information saved at {info_file}.json.\n")
+        sys.stdout.flush()
 
     # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
     checkpoint_file.unlink(missing_ok=True)
