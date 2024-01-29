@@ -142,7 +142,7 @@ def build_kernel_matrix(
 
     # Checkpointing file
     pathlib.Path("tmp").mkdir(exist_ok=True)
-    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file)
+    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file + ".npy")
 
     # Dictionary to keep track of profiling information
     if rank == root:
@@ -396,9 +396,9 @@ def build_kernel_matrix(
 
         # If requested by user, dump `profiling_dict` to file
         if info_file is not None:
-            with open(info_file, 'w') as fp:
+            with open(info_file + ".json", 'w') as fp:
                 json.dump(profiling_dict, fp, indent=4)
-            print(f"Profiling information saved at {info_file}.\n")
+            print(f"Profiling information saved at {info_file + ".json"}.\n")
 
     # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
     checkpoint_file.unlink(missing_ok=True)
