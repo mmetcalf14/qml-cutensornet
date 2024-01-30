@@ -281,6 +281,7 @@ def build_kernel_matrix(
         # Load the kernel matrix from the checkpoint file (one per process)
         kernel_mat = np.load(checkpoint_file)
         print(f"[Rank {rank}] Recovered from checkpoint!")
+        sys.stdout.flush()
     else:
         # Allocate space for kernel matrix
         len_Y = len(Y) if Y is not None else len(X)
@@ -329,10 +330,14 @@ def build_kernel_matrix(
             for j, y_mps in enumerate(mps_y_chunk):
                 if y_mps is None: break  # Reached the padded entries; stop
 
-                overlap = x_mps.H @ y_mps
-                kernel_entry = abs(overlap)**2
                 x_index = i + entries_per_chunk*rank
                 y_index = j + entries_per_chunk*((rank+this_iteration) % y_chunks)
+
+                # Skip if this value was saved in the checkpoint
+                if kernel_mat[y_index, x_index] != 0: break
+
+                overlap = x_mps.H @ y_mps
+                kernel_entry = abs(overlap)**2
 
                 kernel_mat[y_index, x_index] = kernel_entry
                 # If X == Y, some entries can be filled thanks to symmetry
@@ -343,10 +348,10 @@ def build_kernel_matrix(
                     # would solve the same tile, causing these to have double their value
                     # after applying `mpi_comm.reduce` with SUM operator.
 
-                if rank == root and progress_bar * progress_tick < i:
-                    print(f"\t{progress_bar*10}%")
-                    sys.stdout.flush()
-                    progress_bar += 1
+            if rank == root and progress_bar * progress_tick < i:
+                print(f"\t{progress_bar*10}%")
+                sys.stdout.flush()
+                progress_bar += 1
 
         # Report back to user
         if rank == root:
