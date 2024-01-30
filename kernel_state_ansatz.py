@@ -106,7 +106,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
             Defaults to 1e-15.
 
     Returns:
-        A kernel matrix of dimensions `len(X)`x`len(Y)`.
+        A kernel matrix of dimensions `len(Y)`x`len(X)`.
 
     Raises:
         ValueError: It is assumed that `len(Y) <= len(X)`. If this is not the case,
@@ -275,7 +275,8 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         tiling_start_time = MPI.Wtime()
 
     # Allocate space for kernel matrix
-    kernel_mat = np.zeros(shape=(len(X), len(Y) if Y is not None else len(X)))
+    len_Y = len(Y) if Y is not None else len(X)
+    kernel_mat = np.zeros(shape=(len_Y, len(X)))
 
     # Compute tiles of the kernel-matrix and pass the Y chunks around in round robin
     if Y is not None:
@@ -332,14 +333,20 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
                     x_index = i + entries_per_chunk*rank
                     y_index = j + entries_per_chunk*((rank+this_iteration) % y_chunks)
 
-                    kernel_mat[x_index, y_index] = kernel_entry
+                    kernel_mat[y_index, x_index] = kernel_entry
+
                     # If X == Y, some entries can be filled thanks to symmetry
                     if Y is None:
-                        if this_iteration != iterations - 1: # Don't do for last iteration
-                            kernel_mat[y_index, x_index] = kernel_entry
-                        # NOTE: We skip the last iteration since otherwise two different GPUs
-                        # would solve the same tile, causing these to have double their value
-                        # after applying `mpi_comm.reduce` with SUM operator.
+                        if not (
+                            this_iteration == 0 or  # Don't do it for the block diagonal
+                            x_chunks % 2 == 0 and this_iteration == iterations - 1  # Don't do for last iteration
+                        ):
+                            kernel_mat[x_index, y_index] = kernel_entry
+                        # NOTE: We skip for the block diagonal since we calculate each entry of it as if it were
+                        # a standard tile, so the symmetry would just rewrite values that we have calculated.
+                        # NOTE: When `x_chunks` is even we must skip the last iteration. Otherwise two different CPUs
+                        # would solve the same tile, causing these to have double their value after applying
+                        # `mpi_comm.reduce` with SUM operator. When `x_chunks` is odd this is not an issue.
 
                     if rank == root and progress_bar * progress_checkpoint < i:
                         print(f"\t{progress_bar*10}%")
