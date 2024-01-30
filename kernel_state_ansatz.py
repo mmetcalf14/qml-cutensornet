@@ -342,11 +342,16 @@ def build_kernel_matrix(
                 kernel_mat[y_index, x_index] = kernel_entry
                 # If X == Y, some entries can be filled thanks to symmetry
                 if Y is None:
-                    if this_iteration != iterations - 1: # Don't do for last iteration
+                    if not (
+                        this_iteration == 0 or  # Don't do it for the block diagonal
+                        x_chunks % 2 == 0 and this_iteration == iterations - 1  # Don't do for last iteration
+                    ):
                         kernel_mat[x_index, y_index] = kernel_entry
-                    # NOTE: We skip the last iteration since otherwise two different CPUs
-                    # would solve the same tile, causing these to have double their value
-                    # after applying `mpi_comm.reduce` with SUM operator.
+                    # NOTE: We skip for the block diagonal since we calculate each entry of it as if it were
+                    # a standard tile, so the symmetry would just rewrite values that we have calculated.
+                    # NOTE: When `x_chunks` is even we must skip the last iteration. Otherwise two different CPUs
+                    # would solve the same tile, causing these to have double their value after applying
+                    # `mpi_comm.reduce` with SUM operator. When `x_chunks` is odd this is not an issue.
 
             if rank == root and progress_bar * progress_tick < i:
                 print(f"\t{progress_bar*10}%")
