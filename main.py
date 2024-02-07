@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import networkx as nx
 import sys
 import pathlib
 import logging
@@ -16,32 +17,75 @@ import scipy.linalg as la
 rank = 0
 root = 0
 
+# Set up cuQuantum logger
+logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
+
+
+def entanglement_graph(graph_type, nq, nn=None, ep=None, seed=None):
+    """
+    function to produce the edgelist/entanglement map for a circuit ansatz
+    graph type (str): Either a random graph or a linear entanglement map
+    nq (int): Number of qubits/features
+    nn (int): number of nearest neighbors for linear entanglement map
+    ep (float): Edge probability for random graph
+    seed (int): Seed for the random graph
+    """
+    map = []
+
+    if nn == None:
+        nn = 1
+    if ep == None:
+        ep = 0.5
+
+    if graph_type == 'random':
+        graph = nx.gnp_random_graph(nq, ep, seed=seed)
+        map = nx.edges(graph)
+    elif graph_type == 'linear':
+        map = [(i, i + j) for i in range(nq - 1) for j in range(1, nn + 1) if (i + j) < nq]
+    else:
+        raise RuntimeError("You have not specified a valid entanglement map")
+
+    return map
+    
+def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
+    """
+    Function to sample from data and then divide into train/test sets
+    df: Pandas dataframe
+    ndmin (int): data size for minority class
+    ndmaj (int): data size for majority class
+    test_frac: fraction to divide data into train and test
+    seed: random seed for sampling
+    """
+    data_reduced = pd.concat([df[df['Class']==0].sample(ndmin ,random_state=(seed*20+2)), df[df['Class']==1].sample(ndmaj,  random_state=(seed*46+9))], axis=0)
+    train_df, test_df = train_test_split(data_reduced,  stratify=data_reduced['Class'], test_size=test_frac ,random_state=seed*26+19)
+    train_labels = train_df.pop('Class')
+    test_labels = test_df.pop('Class')
+    
+    return np.array(train_df), np.array(train_labels,dtype='int'), np.array(test_df), np.array(test_labels,dtype='int')
+    
 ##############
 # Parameters #
 ##############
-
-# Set up cuQuantum logger
-logging.basicConfig(level=30)  # 30=quiet, 20=info, 10=debug
 
 # Simulation parameters.
 value_of_zero = 1e-16
 n_tiles = 1#None  # Use default choice
 
+
 # QML model parameters
 num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
 gamma = float(sys.argv[3])
-entanglement_map = [[i,i+1] for i in range(num_features-1)]
+edge_probability = float(sys.argv[4])
+nearest_neighbors = int(sys.argv[5])
+map_strategy = str(sys.argv[6])
+entanglement_map = entanglement_graph(map_strategy,num_features,nn=nearest_neighbors, ep=edge_probability,seed=1235)
 
-n_illicit_train = int(sys.argv[4])
-n_licit_train = int(sys.argv[5])
-n_illicit_test = int(sys.argv[6])
-n_licit_test = int(sys.argv[7])
+n_illicit = int(sys.argv[7])
+n_licit = int(sys.argv[8])
 
-train_size = n_licit_train+n_illicit_train
-test_size = n_licit_test+n_illicit_test
-train_ratio = n_illicit_train/train_size
-test_ratio = n_illicit_test/test_size
+data_file = str(sys.argv[9])
+
 
 if rank == root:
     print("\nUsing the following parameters:")
@@ -51,10 +95,8 @@ if rank == root:
     print(f"\tgamma: {gamma}")
     print(f"\tentanglement_map: {entanglement_map}")
     print("")
-    print(f"\tn_illicit_train: {n_illicit_train}")
-    print(f"\tn_licit_train: {n_licit_train}")
-    print(f"\tn_illicit_test: {n_illicit_test}")
-    print(f"\tn_licit_test: {n_licit_test}")
+    print(f"\tn_illicit: {n_illicit}")
+    print(f"\tn_licit: {n_licit}")
     print("")
     sys.stdout.flush()
 
@@ -65,143 +107,134 @@ if rank == root:
 # TODO: Should this be done only by process 0 and then broadcasted?
 #  Not for now, this is not a bottleneck.
 
-feature_labels = []
-feature_labels.append('Node')
-feature_labels.append('Time')
-for i in range(165):
-    feature_labels.append('Feature {}'.format(i+1))
+data = pd.read_csv('datasets/'+ data_file)
 
-feature_data = pd.read_csv('elliptic_bitcoin_dataset/elliptic_txs_features.csv', names = feature_labels)
-node_label = ['Node', 'Class']
-node_class = pd.read_csv('elliptic_bitcoin_dataset/elliptic_txs_classes.csv', names = node_label)
+num_samples = 1
+test_kpis = []
+train_kpis = []
 
-node_class.loc[node_class["Class"] == "unknown", "Class"] = 99
-node_class.loc[node_class["Class"] == "1", "Class"] = 0
-node_class.loc[node_class["Class"] == "2", "Class"] = 1
+#NOte that this loop needs removing for multi-cpu and just add seed as an input
+for i in range(num_samples):
+    print(f'Getting result for sample {i}')
+    x_train, y_train, x_test, y_test = draw_sample(data,n_illicit, n_licit, 0.2, i)
+    #print('Data Shape: ', np.shape(x_train),np.shape(x_test))
 
-clean_feature_data = feature_data.drop(np.where(node_class['Class']==99)[0])
-clean_class_label = node_class.drop(np.where(node_class['Class']==99)[0])
-del feature_data, node_class
+    transformer = QuantileTransformer(output_distribution='normal')
+    train_features = transformer.fit_transform(x_train)
+    test_features = transformer.transform(x_test)
 
-elliptic_data = pd.merge(clean_class_label, clean_feature_data)
-node = elliptic_data.pop('Node')
-time = elliptic_data.pop('Time')
-del clean_feature_data, clean_class_label
+    scaler = StandardScaler()
+    train_features = scaler.fit_transform(x_train)
+    test_features = scaler.transform(x_test)
 
-data_reduced = pd.concat([elliptic_data[elliptic_data['Class']==0].sample(n_illicit_train+n_illicit_test,random_state=321), elliptic_data[elliptic_data['Class']==1].sample(n_licit_train+n_licit_test,  random_state=568)], axis=0)
-train_df, test_df = train_test_split(data_reduced,  stratify=data_reduced['Class'], test_size=n_illicit_test+n_licit_test,random_state=345)
+    minmax_scale = MinMaxScaler((0,2)).fit(x_train)
+    train_features = minmax_scale.transform(x_train)
+    test_features = minmax_scale.transform(x_test)
 
-train_labels = np.array(train_df.pop('Class'),dtype='int')
-test_labels = np.array(test_df.pop('Class'),dtype='int')
-train_features = np.array(train_df)
-test_features = np.array(test_df)
+    reduced_train_features = x_train[:,0:num_features]
+    reduced_test_features = x_test[:,0:num_features]
 
-transformer = QuantileTransformer(output_distribution='normal')
-train_features = transformer.fit_transform(train_features)
-test_features = transformer.transform(test_features)
+    #################################
+    # Construction of kernel matrix #
+    #################################
 
-scaler = StandardScaler()
-train_features = scaler.fit_transform(train_features)
-test_features = scaler.transform(test_features)
+    pathlib.Path("kernels").mkdir(exist_ok=True)
+    pathlib.Path("data").mkdir(exist_ok=True)
 
-minmax_scale = MinMaxScaler((0,2)).fit(train_features)
-train_features = minmax_scale.transform(train_features)
-test_features = minmax_scale.transform(test_features)
+    # Create the ansatz class
+    ansatz = KernelStateAnsatz(
+        num_qubits=num_features,
+        reps=reps,
+        gamma=gamma,
+        entanglement_map=entanglement_map,
+        hadamard_init=True
+    )
 
-reduced_train_features = train_features[:,0:num_features]
-reduced_test_features = test_features[:,0:num_features]
+    train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}_sample-{}".format(num_features, reps, gamma, n_illicit,i)
+    test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}_sample-{}".format(num_features, reps, gamma, n_illicit,i)
 
-#################################
-# Construction of kernel matrix #
-#################################
+    time0 = t.time()
+    kernel_train = build_kernel_matrix(
+        ansatz,
+        X=reduced_train_features,
+        info_file=train_info,
+        value_of_zero=value_of_zero,
+        number_of_tiles=n_tiles,
+    )
+    time1 = t.time()
+    if rank == root:
+        print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
+#        np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}_sample-{}.npy".format(num_features, reps, gamma, n_illicit,i),kernel_train)
 
-pathlib.Path("kernels").mkdir(exist_ok=True)
-pathlib.Path("data").mkdir(exist_ok=True)
+    time0 = t.time()
+    kernel_test = build_kernel_matrix(
+        ansatz,
+        X=reduced_train_features,
+        Y=reduced_test_features,
+        info_file=test_info,
+        value_of_zero=value_of_zero,
+        number_of_tiles=n_tiles,
+    )
+    time1 = t.time()
+    if rank == root:
+        print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
+#        np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}_sample-{}.npy".format(num_features, reps, gamma, n_illicit, i),kernel_test)
+    #    print('Test Kernel\n',kernel_test)
+#        print('shape: ', np.shape(kernel_train))
+#        print('Train Kernel\n',kernel_train)
 
-# Create the ansatz class
-ansatz = KernelStateAnsatz(
-	num_qubits=num_features,
-	reps=reps,
-	gamma=gamma,
-	entanglement_map=entanglement_map,
-	hadamard_init=True
-)
+    #############################
+    # Testing the kernel matrix #
+    #############################
 
-train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_train)
-test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_test)
+#    if rank == root:
+#        reg = [4,3.5,3,2.5,2,1.5,1,0.5,0.1,0.05,0.01]
+#        test_results = []
+#        for key, r in enumerate(reg):
+#            print('coeff: ', r)
+#            svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+#            # scale might work best as 1/Nfeautres
+#
+#            svc.fit(kernel_train, y_train)
+#            test_predict = svc.predict(kernel_test)
+#            accuracy = accuracy_score(y_test,test_predict)
+#            print('accuracy: ', accuracy)
+#            precision = precision_score(y_test,test_predict)
+#            print('precision: ', precision)
+#            recall = recall_score(y_test, test_predict)
+#            print('recall: ', recall)
+#            auc = roc_auc_score(y_test, test_predict)
+#            print('auc: ', auc)
+#            test_results.append([r,accuracy, precision, recall, auc])
+#
+#        test_ind = np.argmax(np.array(test_results[:][4]))
+#        test_kpis.append(test_results[test_ind][:])
+#        
+#        train_results = []
+#        print('\n Train Results\n')
+#        for key, r in enumerate(reg):
+#            print('coeff: ', r)
+#            svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+#            # scale might work best as 1/Nfeautres
+#
+#            svc.fit(kernel_train, y_train)
+#            test_predict = svc.predict(kernel_train)
+#            accuracy = accuracy_score(y_train,test_predict)
+#            print('accuracy: ', accuracy)
+#            precision = precision_score(y_train,test_predict)
+#            print('precision: ', precision)
+#            recall = recall_score(y_train, test_predict)
+#            print('recall: ', recall)
+#            auc = roc_auc_score(y_train, test_predict)
+#            print('auc: ', auc)
+#            train_results.append([r,accuracy, precision, recall, auc])
+#        
+#        train_ind = np.argmax(np.array(train_results[:][4]))
+#        train_kpis.append(train_results[train_ind][:])
+#
+#        np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}_sample{}.npy'.format(num_features, reps, gamma, n_illicit,i),train_results)
+#        np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}_sample-{}.npy'.format(num_features, reps, gamma, n_illicit,i),test_results)
+#print('Final results')
+#print('Best Test KPIs\n',test_kpis)
+#print('\nBest Train KPIs\n',train_kpis)
 
-time0 = t.time()
-kernel_train = build_kernel_matrix(
-    ansatz,
-    X=reduced_train_features,
-    info_file=train_info,
-    value_of_zero=value_of_zero,
-    number_of_tiles=n_tiles,
-)
-time1 = t.time()
-if rank == root:
-    print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
-
-time0 = t.time()
-kernel_test = build_kernel_matrix(
-    ansatz,
-    X=reduced_train_features,
-    Y=reduced_test_features,
-    info_file=test_info,
-    value_of_zero=value_of_zero,
-    number_of_tiles=n_tiles,
-)
-time1 = t.time()
-if rank == root:
-    print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
-#    print('Test Kernel\n',kernel_test)
-    print('shape: ', np.shape(kernel_train))
-    print('Train Kernel\n',kernel_train)
-
-#############################
-# Testing the kernel matrix #
-#############################
-
-if rank == root:
-    reg = [4,3.5,3,2.5,2,1.5,1,0.5,0.1,0.05,0.01]
-    test_results = []
-    for key, r in enumerate(reg):
-        print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
-        # scale might work best as 1/Nfeautres
-
-        svc.fit(kernel_train, train_labels)
-        test_predict = svc.predict(kernel_test)
-        accuracy = accuracy_score(test_labels,test_predict)
-        print('accuracy: ', accuracy)
-        precision = precision_score(test_labels,test_predict)
-        print('precision: ', precision)
-        recall = recall_score(test_labels, test_predict)
-        print('recall: ', recall)
-        auc = roc_auc_score(test_labels, test_predict)
-        print('auc: ', auc)
-        test_results.append([r,accuracy, precision, recall, auc])
-
-    train_results = []
-    print('\n Train Results\n')
-    for key, r in enumerate(reg):
-        print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
-        # scale might work best as 1/Nfeautres
-
-        svc.fit(kernel_train, train_labels)
-        test_predict = svc.predict(kernel_train)
-        accuracy = accuracy_score(train_labels,test_predict)
-        print('accuracy: ', accuracy)
-        precision = precision_score(train_labels,test_predict)
-        print('precision: ', precision)
-        recall = recall_score(train_labels, test_predict)
-        print('recall: ', recall)
-        auc = roc_auc_score(train_labels, test_predict)
-        print('auc: ', auc)
-        train_results.append([r,accuracy, precision, recall, auc])
-
-    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_train),train_results)
-    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_test),test_results)
