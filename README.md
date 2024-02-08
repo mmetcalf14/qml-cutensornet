@@ -21,7 +21,7 @@ Test pyCall installation was successful by entering the Python REPL and typing:
 from julia.api import Julia
 jl = Julia(compiled_modules=False)
 from julia import Base
-Base.sind(60)
+
  ```
 
 Finally, to install *KernelPkg.jl*, move the contents of the folder `KernelPkg` in this repository to `~/.julia/dev/KernelPkg`. Then, open the Julia REPL and press `]` to enter the package manager. Locally install the package by typing:
