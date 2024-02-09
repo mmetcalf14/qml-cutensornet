@@ -52,7 +52,7 @@ class KernelStateAnsatz:
         for _ in range(reps):
             for pauli in onebpaulis:
                 for i in range(num_qubits):
-                    exponent = (1/np.pi)*gamma*self.feature_symbol_list[i]
+                    exponent = (2/np.pi)*gamma*self.feature_symbol_list[i]
                     self.ansatz_circ.add_pauliexpbox(
                         PauliExpBox([pauli], exponent), qubits=[i]
                     )
@@ -61,7 +61,7 @@ class KernelStateAnsatz:
                 for (q0, q1) in entanglement_map:
                     symb0 = self.feature_symbol_list[q0]
                     symb1 = self.feature_symbol_list[q1]
-                    exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
+                    exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
                     self.ansatz_circ.add_pauliexpbox(
                         PauliExpBox([pauli0, pauli1], exponent), qubits=[q0, q1]
                     )

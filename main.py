@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import networkx as nx
 from mpi4py import MPI
 import sys
 
@@ -17,6 +18,47 @@ mpi_comm = MPI.COMM_WORLD
 rank, n_procs = mpi_comm.Get_rank(), mpi_comm.Get_size()
 root = 0
 
+def entanglement_graph(graph_type, nq, nn=None, ep=None, seed=None):
+    """
+    function to produce the edgelist/entanglement map for a circuit ansatz
+    graph type (str): Either a random graph or a linear entanglement map
+    nq (int): Number of qubits/features
+    nn (int): number of nearest neighbors for linear entanglement map
+    ep (float): Edge probability for random graph
+    seed (int): Seed for the random graph
+    """
+    map = []
+
+    if nn == None:
+        nn = 1
+    if ep == None:
+        ep = 0.5
+
+    if graph_type == 'random':
+        graph = nx.gnp_random_graph(nq, ep, seed=seed)
+        map = nx.edges(graph)
+    elif graph_type == 'linear':
+        map = [(i, i + j) for i in range(nq - 1) for j in range(1, nn + 1) if (i + j) < nq]
+    else:
+        raise RuntimeError("You have not specified a valid entanglement map")
+
+    return map
+    
+def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
+    """
+    Function to sample from data and then divide into train/test sets
+    df: Pandas dataframe
+    ndmin (int): data size for minority class
+    ndmaj (int): data size for majority class
+    test_frac: fraction to divide data into train and test
+    seed: random seed for sampling
+    """
+    data_reduced = pd.concat([df[df['Class']==0].sample(ndmin ,random_state=(seed*20+2)), df[df['Class']==1].sample(ndmaj,  random_state=(seed*46+9))], axis=0)
+    train_df, test_df = train_test_split(data_reduced,  stratify=data_reduced['Class'], test_size=test_frac ,random_state=seed*26+19)
+    train_labels = train_df.pop('Class')
+    test_labels = test_df.pop('Class')
+    
+    return np.array(train_df), np.array(train_labels,dtype='int'), np.array(test_df), np.array(test_labels,dtype='int')
 ##############
 # Parameters #
 ##############
@@ -24,24 +66,19 @@ root = 0
 if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
+# QML model parameters
 num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
-gamma = 0.1
-entanglement_map = [[i,i+1] for i in range(num_features-1)]
+gamma = float(sys.argv[3])
+edge_probability = float(sys.argv[4])
+nearest_neighbors = int(sys.argv[5])
+map_strategy = str(sys.argv[6])
+entanglement_map = entanglement_graph(map_strategy,num_features,nn=nearest_neighbors, ep=edge_probability,seed=1235)
 
-config = ConfigMPS(
-    value_of_zero = 1e-15
-)
-
-n_illicit_train = 120
-n_licit_train = 120
-n_illicit_test = 120
-n_licit_test = 120
-
-train_size = n_licit_train+n_illicit_train
-test_size = n_licit_test+n_illicit_test
-train_ratio = n_illicit_train/train_size
-test_ratio = n_illicit_test/test_size
+n_illicit = int(sys.argv[7])
+n_licit = int(sys.argv[8])
+data_seed = int(sys.argv[9])
+data_file = str(sys.argv[10])
 
 if rank == root:
     print("\nUsing the following parameters:")
@@ -64,39 +101,7 @@ if rank == root:
 # Load data and prepare #
 #########################
 
-# TODO: Should this be done only by process 0 and then broadcasted?
-#  Not for now, this is not a bottleneck.
-
-feature_labels = []
-feature_labels.append('Node')
-feature_labels.append('Time')
-for i in range(165):
-    feature_labels.append('Feature {}'.format(i+1))
-
-feature_data = pd.read_csv('elliptic_bitcoin_dataset/elliptic_txs_features.csv', names = feature_labels)
-node_label = ['Node', 'Class']
-node_class = pd.read_csv('elliptic_bitcoin_dataset/elliptic_txs_classes.csv', names = node_label)
-
-node_class.loc[node_class["Class"] == "unknown", "Class"] = 99
-node_class.loc[node_class["Class"] == "1", "Class"] = 0
-node_class.loc[node_class["Class"] == "2", "Class"] = 1
-
-clean_feature_data = feature_data.drop(np.where(node_class['Class']==99)[0])
-clean_class_label = node_class.drop(np.where(node_class['Class']==99)[0])
-del feature_data, node_class
-
-elliptic_data = pd.merge(clean_class_label, clean_feature_data)
-node = elliptic_data.pop('Node')
-time = elliptic_data.pop('Time')
-del clean_feature_data, clean_class_label
-
-data_reduced = pd.concat([elliptic_data[elliptic_data['Class']==0].sample(n_illicit_train+n_illicit_test,random_state=321), elliptic_data[elliptic_data['Class']==1].sample(n_licit_train+n_licit_test,  random_state=568)], axis=0)
-train_df, test_df = train_test_split(data_reduced,  stratify=data_reduced['Class'], test_size=n_illicit_test+n_licit_test,random_state=345)
-
-train_labels = np.array(train_df.pop('Class'),dtype='int')
-test_labels = np.array(test_df.pop('Class'),dtype='int')
-train_features = np.array(train_df)
-test_features = np.array(test_df)
+train_features, train_labels, test_features, test_labels = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
 
 transformer = QuantileTransformer(output_distribution='normal')
 train_features = transformer.fit_transform(train_features)
@@ -164,3 +169,6 @@ if rank == root:
         auc = roc_auc_score(test_labels, test_predict)
         print('auc: ', auc)
         test_results.append([r,accuracy, precision, recall, auc])
+    
+    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}_sample{}.npy'.format(num_features, reps, gamma, n_illicit,i),train_results)
+    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}_sample-{}.npy'.format(num_features, reps, gamma, n_illicit,i),test_results)
