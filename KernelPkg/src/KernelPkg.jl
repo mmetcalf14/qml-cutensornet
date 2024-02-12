@@ -5,13 +5,11 @@ using ITensors
 export compute_tile
 
 # Gate definitions, since TKET's are slightly different
-function ITensors.op(::OpName"TKET_XXPhase", t::SiteType"Qubit"; α::Number)
+function ITensors.op(::OpName"TKET_Rx", t::SiteType"Qubit"; α::Number)
   θ = π*α/2
   return [
-    cos(θ) 0 0 -im*sin(θ)
-    0 cos(θ) -im*sin(θ) 0
-    0 -im*sin(θ) cos(θ) 0
-    -im*sin(θ) 0 0 cos(θ)
+    cos(θ) -im*sin(θ)
+    -im*sin(θ) cos(θ)
   ]
 end
 
@@ -23,6 +21,26 @@ function ITensors.op(::OpName"TKET_Rz", t::SiteType"Qubit"; α::Number)
   ]
 end
 
+function ITensors.op(::OpName"TKET_XXPhase", t::SiteType"Qubit"; α::Number)
+  θ = π*α/2
+  return [
+    cos(θ) 0 0 -im*sin(θ)
+    0 cos(θ) -im*sin(θ) 0
+    0 -im*sin(θ) cos(θ) 0
+    -im*sin(θ) 0 0 cos(θ)
+  ]
+end
+
+function ITensors.op(::OpName"TKET_ZZPhase", t::SiteType"Qubit"; α::Number)
+  θ = π*α/2
+  return [
+    exp(-im * θ) 0 0 0
+    0 exp(im * θ) 0 0
+    0 0 exp(im * θ) 0
+    0 0 0 exp(-im * θ)
+  ]
+end
+
 # Build and simulate the given circuit (as a list of gates)
 function build_and_sim_circ(circuit, site_inds, value_of_zero::Float64)
   gates::Vector{ITensor} = []
@@ -30,10 +48,16 @@ function build_and_sim_circ(circuit, site_inds, value_of_zero::Float64)
   for (name, qubits, params) in circuit
     if name == "H"
       append!(gates, [op("H", site_inds, 1+qubits[1])])
+    elseif name == "Rx"
+      append!(gates, [op("TKET_Rx", site_inds, 1+qubits[1]; α=params[1])])
     elseif name == "Rz"
       append!(gates, [op("TKET_Rz", site_inds, 1+qubits[1]; α=params[1])])
     elseif name == "XXPhase"
       append!(gates, [op("TKET_XXPhase", site_inds, 1+qubits[1], 1+qubits[2]; α=params[1])])
+    elseif name == "ZZPhase"
+      append!(gates, [op("TKET_ZZPhase", site_inds, 1+qubits[1], 1+qubits[2]; α=params[1])])
+    elseif name == "SWAP"
+      append!(gates, [op("SWAP", site_inds, 1+qubits[1], 1+qubits[2])])
     else
       error("KernelPkg error: Unrecognised gate.")
     end

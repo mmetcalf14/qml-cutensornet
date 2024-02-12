@@ -106,10 +106,18 @@ class KernelStateAnsatz:
             qubits = [q.index[0] for q in g.qubits]
             if g.op.type == OpType.H:
                 gates.append(("H", qubits, []))
+            elif g.op.type == OpType.Rx:
+                gates.append(("Rx", qubits, g.op.params))
             elif g.op.type == OpType.Rz:
                 gates.append(("Rz", qubits, g.op.params))
             elif g.op.type == OpType.XXPhase:
                 gates.append(("XXPhase", qubits, g.op.params))
+            elif g.op.type == OpType.ZZPhase:
+                gates.append(("ZZPhase", qubits, g.op.params))
+            elif g.op.type == OpType.SWAP:
+                gates.append(("SWAP", qubits, []))
+            else:
+                raise RuntimeError(f"Unrecognised {g.op.type}.")
 
         return gates
 
