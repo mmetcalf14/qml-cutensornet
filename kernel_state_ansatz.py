@@ -10,6 +10,10 @@ from sympy import Symbol
 
 import cuquantum as cq
 from pytket import Circuit
+from pytket.transform import Transform
+from pytket.architecture import Architecture
+from pytket.passes import DefaultMappingPass
+from pytket.predicates import CompilationUnit
 from pytket.circuit import PauliExpBox, Pauli
 from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, ConfigMPS, simulate
 
@@ -74,6 +78,16 @@ class KernelStateAnsatz:
                     self.ansatz_circ.add_pauliexpbox(
                         PauliExpBox([pauli0, pauli1], exponent), qubits=[q0, q1]
                     )
+
+        # Apply TKET routing to compile circuit to line architecture
+        cu = CompilationUnit(self.ansatz_circ)
+        architecture = Architecture(
+            [(i, i + 1) for i in range(self.ansatz_circ.n_qubits - 1)]
+        )
+        DefaultMappingPass(architecture).apply(cu)
+        self.ansatz_circ = cu.circuit
+        Transform.DecomposeBRIDGE().apply(self.ansatz_circ)
+
 
     def circuit_for_data(self, feature_values: list[float]) -> Circuit:
         """Produce the circuit with its symbols being replaced by the given values.
