@@ -11,6 +11,11 @@ from sympy import Symbol
 
 from pytket import Circuit
 from pytket.circuit import OpType
+from pytket.transform import Transform
+from pytket.architecture import Architecture
+from pytket.passes import DefaultMappingPass
+from pytket.predicates import CompilationUnit
+from pytket.circuit import PauliExpBox, Pauli
 
 from julia.api import Julia
 jl = Julia(compiled_modules=False)  # TODO: Hopefully, this can be avoided
@@ -69,6 +74,15 @@ class KernelStateAnsatz:
                 exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
                 self.ansatz_circ.XXPhase(exponent, q0, q1)
                 #self.ansatz_circ.ZZPhase(exponent, q0, q1)
+
+        # Apply TKET routing to compile circuit to line architecture
+        cu = CompilationUnit(self.ansatz_circ)
+        architecture = Architecture(
+            [(i, i + 1) for i in range(self.ansatz_circ.n_qubits - 1)]
+        )
+        DefaultMappingPass(architecture).apply(cu)
+        self.ansatz_circ = cu.circuit
+        Transform.DecomposeBRIDGE().apply(self.ansatz_circ)
 
     def circuit_for_data(
         self,
