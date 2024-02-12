@@ -27,6 +27,8 @@ def simulate(circ: Circuit, config: Config) -> CircuitMPS:
             mps.rzz(math.pi*gate.op.params[0], gate.qubits[0].index[0], gate.qubits[1].index[0])
         elif gate.op.type == OpType.XXPhase:
             mps.rxx(math.pi*gate.op.params[0], gate.qubits[0].index[0], gate.qubits[1].index[0])
+        elif gate.op.type == OpType.SWAP:
+            mps.swap(gate.qubits[0].index[0], gate.qubits[1].index[0])
         else:
             raise Exception(f"Unknown gate {gate.op.type}")
 
