@@ -2,6 +2,7 @@ from mpi4py import MPI
 
 import numpy as np
 import pandas as pd
+import networkx as nx
 import sys
 import pathlib
 import logging
@@ -110,7 +111,7 @@ if rank == root:
 #  Not for now, this is not a bottleneck.
 data = pd.read_csv('datasets/'+ data_file)
 
-x_train, y_train, x_test, y_test = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
+train_features, train_labels, test_features, test_labels = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
 
 transformer = QuantileTransformer(output_distribution='normal')
 train_features = transformer.fit_transform(train_features)
@@ -143,8 +144,8 @@ ansatz = KernelStateAnsatz(
 	hadamard_init=True
 )
 
-train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_train)
-test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_test)
+train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit)
+test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit)
 
 time0 = MPI.Wtime()
 kernel_train = build_kernel_matrix(
@@ -158,7 +159,7 @@ kernel_train = build_kernel_matrix(
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
+    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit),kernel_train)
 
 time0 = MPI.Wtime()
 kernel_test = build_kernel_matrix(
@@ -173,7 +174,7 @@ kernel_test = build_kernel_matrix(
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
+    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit),kernel_test)
     print('Test Kernel\n',kernel_test)
 
 #############################
@@ -219,5 +220,5 @@ if rank == root:
         print('auc: ', auc)
         train_results.append([r,accuracy, precision, recall, auc])
 
-    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_train),train_results)
-    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_test),test_results)
+    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit),train_results)
+    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit),test_results)
