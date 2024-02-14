@@ -2,6 +2,7 @@ module KernelPkg
 
 using ITensors
 
+
 export compute_tile
 
 # Gate definitions, since TKET's are slightly different
@@ -41,8 +42,9 @@ function build_and_sim_circ(circuit, site_inds, value_of_zero::Float64)
 
   # Simulate the circuit
   ψ = apply(gates, MPS(site_inds, "0"); cutoff=value_of_zero)
-
-  return ψ
+  max_chi = maxlinkdim(ψ)
+  # println(ψ)
+  return ψ , max_chi
 end
 
 # Compute all of the entries of a tile; includes MPS simulation of the circuits
@@ -51,16 +53,31 @@ function compute_tile(n_qubits::Int64, x_circs, y_circs, value_of_zero::Float64)
   site_inds = siteinds("Qubit", n_qubits)
 
   # Generate all MPS
-  x_mps = [build_and_sim_circ(circ, site_inds, value_of_zero) for circ in eachrow(x_circs)]
-  y_mps = [build_and_sim_circ(circ, site_inds, value_of_zero) for circ in eachrow(y_circs)]
+  
+  x_mps = []
+  x_chi = []
+  for circ in eachrow(x_circs)
+    mps, chi = build_and_sim_circ(circ, site_inds, value_of_zero)
+    append!(x_chi,chi)
+    push!(x_mps,mps)
+  end
 
+  y_mps = []
+  y_chi = []
+  for circ in eachrow(y_circs)
+    mps, chi = build_and_sim_circ(circ, site_inds, value_of_zero)
+    append!(y_chi,chi)
+    push!(y_mps,mps)
+  end
+  #x_mps = [build_and_sim_circ(circ, site_inds, value_of_zero) for circ in #eachrow(x_circs)]
+  #y_mps = [build_and_sim_circ(circ, site_inds, value_of_zero) for circ in #eachrow(y_circs)]
   # For each pair, compute the inner product
   pairs = [(i, j) for i in 1:length(y_mps) for j in 1:length(x_mps)]
   for (i, j) in pairs
     tile[i, j] = abs(inner(y_mps[i], x_mps[j]))^2
   end
 
-  return tile
+  return tile, x_chi, y_chi
 end
 
 end  #module

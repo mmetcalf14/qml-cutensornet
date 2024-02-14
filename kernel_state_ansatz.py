@@ -8,6 +8,7 @@ from statistics import median
 
 import numpy as np
 from sympy import Symbol
+from statistics import mean
 
 from pytket import Circuit
 from pytket.circuit import OpType
@@ -202,6 +203,8 @@ def build_kernel_matrix(
     # Each process picks a tile and computes it
     tile_times = []
     start_time = t.time()
+    tile_chi_x = []
+    tile_chi_y = []
     for k, (y_slice, x_slice) in enumerate(tiles):
         if k % n_procs == rank:  # Otherwise, this process is not meant to compute this tile
 
@@ -217,12 +220,14 @@ def build_kernel_matrix(
 
             # Otherwise, compute the tile
             tile_ix = np.ix_(range(*y_slice), range(*x_slice))
-            kernel_mat[tile_ix] = KernelPkg.compute_tile(
+            kernel_mat[tile_ix], av_chi_x, av_chi_y = KernelPkg.compute_tile(
                 ansatz.ansatz_circ.n_qubits,
                 x_circs[x_slice[0]:x_slice[1]],
                 y_circs[y_slice[0]:y_slice[1]],
                 value_of_zero,
             )
+            tile_chi_x.append(sum(av_chi_x)/len(av_chi_x))
+            tile_chi_y.append(sum(av_chi_y)/len(av_chi_y))
 
             # If the kernel matrix is symmetrix (X==Y) and this is not a diagonal tile
             if Y is None and x_slice[0] != y_slice[0]:
@@ -242,20 +247,24 @@ def build_kernel_matrix(
 
     # Combine the kernel matrices of all processes
     # TODO
-
+    print('average bond dimension x:\n',tile_chi_x)
+    print('average bond dimension y:\n',tile_chi_y)
     # Record time
     if rank == root:
         print("100%")
         end_time = t.time()
         total_time = end_time - start_time
         profiling_dict["total_time"] = (total_time, "seconds")
-
         med_tile_time = median(tile_times)
         profiling_dict["median_tile_time"] = (med_tile_time, "seconds")
         print(f"[Rank {rank}] Median tile time is {round(med_tile_time,2)} seconds.")
         avg_entry_time = 1000 * med_tile_time / tile_side**2
         profiling_dict["avg_entry_time"] = (avg_entry_time, "ms")
+        profiling_dict["ave max chi x"] = (sum(tile_chi_x)/len(tile_chi_x),"chi x")
+        profiling_dict["ave max chi y"] = (sum(tile_chi_y)/len(tile_chi_y),"chi y")
         print(f"\tIn average, each of entries takes {round(avg_entry_time,2)} ms.")
+        print(f"\tAverage max bond dimension x is {sum(tile_chi_x)/len(tile_chi_x)}")
+        print(f"\tAverage max bond dimension y is {sum(tile_chi_y)/len(tile_chi_y)}")
         print("\tNote: this also includes MPS simulation.")
 
     # Dump `profiling_dict` to file
