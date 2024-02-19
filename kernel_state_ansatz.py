@@ -195,6 +195,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
     # Each GPU contracts the MPS from its X chunk
     mps_x_chunk = []
     mps_x_time = []
+    mps_x_chi = []
     with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
         progress_bar = 0
         progress_checkpoint = int(np.ceil(entries_per_chunk / 10))
@@ -205,6 +206,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
                 time0 = MPI.Wtime()
                 mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
                 mps_x_time.append(MPI.Wtime() - time0)
+                mps_x_chi.append(max(max(mps.get_virtual_dimensions(i)) for i in range(len(mps))))
             else:
                 mps = None
             mps_x_chunk.append(mps)
@@ -233,6 +235,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
     if Y is not None:
         mps_y_chunk = []
         mps_y_time = []
+        mps_y_chi = []
         with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
             progress_bar = 0
             progress_checkpoint = int(np.ceil(entries_per_chunk / 10))
@@ -243,6 +246,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
                     time0 = MPI.Wtime()
                     mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
                     mps_y_time.append(MPI.Wtime() - time0)
+                    mps_y_chi.append(max(max(mps.get_virtual_dimensions(i)) for i in range(len(mps))))
                 else:
                     mps = None
                 mps_y_chunk.append(mps)
@@ -284,6 +288,14 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         avg_fidelity = sum(fidelities) / actual_n_mps
         print(f"\tAverage MPS fidelity: {avg_fidelity}")
         profiling_dict["avg_fidelity"] = [avg_fidelity, ""]
+
+        print(f"\tAverage max bond dimension x is {mean(mps_x_chi)}")
+        profiling_dict["ave max chi x"] = (mean(mps_x_chi),"chi x")
+        if Y is not None:
+            print(f"\tAverage max bond dimension y is {mean(mps_y_chi)}")
+            profiling_dict["ave max chi y"] = (mean(mps_y_chi),"chi y")
+        else:
+            profiling_dict["ave max chi y"] = (mean(mps_x_chi),"chi y")
 
         print("\nCalculating kernel matrix...")
         profiling_dict["r_nonRR_recv"] = [0, "seconds"]
