@@ -6,6 +6,7 @@ from mpi4py import MPI
 
 import numpy as np
 from sympy import Symbol
+from statistics import mean, median
 
 from pytket import Circuit
 from pytket.transform import Transform
@@ -208,20 +209,20 @@ def build_kernel_matrix(
         print(f"[Rank 0] Circuit list generated. Time taken: {round(duration,2)} seconds.")
         profiling_dict["r0_circ_gen"] = [duration, "seconds"]
         print("\nContracting the MPS of the circuits from the X dataset...")
-        print(f"\tUsing chi = {config.chi}")
-        profiling_dict["chi"] = [config.chi, ""]
         sys.stdout.flush()
-        time0 = MPI.Wtime()
 
     # Each CPU contracts the MPS from its X chunk
     mps_x_chunk = []
+    mps_x_time = []
     progress_bar = 0
     progress_tick = int(np.ceil(entries_per_chunk / 10))
 
     for k, circ in enumerate(circs_x_chunk):
         # Simulate the circuit and obtain the output state as an MPS
         if circ is not None:
+            time0 = MPI.Wtime()
             mps = simulate(circ, config)
+            mps_x_time.append(MPI.Wtime() - time0)
         else:
             mps = None
         mps_x_chunk.append(mps)
@@ -234,29 +235,32 @@ def build_kernel_matrix(
     # Report back to user
     if rank == root:
         print("100%")
-        duration = MPI.Wtime() - time0
+        duration = sum(mps_x_time)
         print(f"[Rank 0] MPS of chunk X contracted. Time taken: {round(duration,2)} seconds.")
         profiling_dict["r0_circ_sim"] = [duration, "seconds"]
-        average = duration / sum(1 for mps in mps_x_chunk if mps is not None)
+        average = mean(mps_x_time)
         print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
         profiling_dict["avg_circ_sim"] = [average, "seconds"]
+        profiling_dict["median_circ_sim"] = [median(mps_x_time), "seconds"]
 
         if Y is not None:
             print("\nContracting the MPS of the circuits from the Y dataset...")
             print(f"\tUsing chi = {config.chi}")
         sys.stdout.flush()
-        time0 = MPI.Wtime()
 
     # Each CPU contracts the MPS from its Y chunk (only if Y != X)
     if Y is not None:
         mps_y_chunk = []
+        mps_y_time = []
         progress_bar = 0
         progress_tick = int(np.ceil(entries_per_chunk / 10))
 
         for k, circ in enumerate(circs_y_chunk):
             # Simulate the circuit and obtain the output state as an MPS
             if circ is not None:
+                time0 = MPI.Wtime()
                 mps = simulate(circ, config)
+                mps_y_time.append(MPI.Wtime() - time0)
             else:
                 mps = None
             mps_y_chunk.append(mps)
@@ -269,11 +273,13 @@ def build_kernel_matrix(
         # Report back to user
         if rank == root:
             print("100%")
-            duration = MPI.Wtime() - time0
+            duration = sum(mps_y_time)
             print(f"[Rank 0] MPS of chunk Y contracted. Time taken: {round(duration,2)} seconds.")
             profiling_dict["r0_circ_sim"][0] += duration
-            average = duration / sum(1 for mps in mps_y_chunk if mps is not None)
+            average = mean(mps_x_time + mps_y_time)
             print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
+            profiling_dict["avg_circ_sim"] = [average, "seconds"]
+            profiling_dict["median_circ_sim"] = [median(mps_x_time + mps_y_time), "seconds"]
 
     # If Y == X then Y chunk for the first iteration will be a copy of the X chunk
     else:
@@ -286,7 +292,6 @@ def build_kernel_matrix(
         print("\nCalculating kernel matrix...")
         profiling_dict["r_nonRR_recv"] = [0, "seconds"]
         profiling_dict["r0_RR_recv"] = [0, "seconds"]
-        profiling_dict["r0_product"] = [0, "seconds"]
         sys.stdout.flush()
         tiling_start_time = MPI.Wtime()
 
@@ -302,7 +307,8 @@ def build_kernel_matrix(
         kernel_mat = np.zeros(shape=(len_Y, len(X)))
     last_checkpoint_time = MPI.Wtime()
 
-    # Compute tiles of the kernel matrix and pass the Y chunks around in round robin
+    vdot_time = []
+    # Compute tiles of the kernel-matrix and pass the Y chunks around in round robin
     if Y is not None:
         iterations = y_chunks
     else:
@@ -350,7 +356,10 @@ def build_kernel_matrix(
                 # Skip if this value was saved in the checkpoint
                 if kernel_mat[y_index, x_index] != 0: break
 
+                time_a = MPI.Wtime()
                 overlap = x_mps.H @ y_mps
+                vdot_time.append(MPI.Wtime() - time_a)
+
                 kernel_entry = abs(overlap)**2
 
                 kernel_mat[y_index, x_index] = kernel_entry
@@ -377,7 +386,6 @@ def build_kernel_matrix(
             print("\t100%")
             duration = MPI.Wtime() - time0
             print(f"\t[Rank 0] Inner products calculated. Time taken: {round(duration,2)} seconds.")
-            profiling_dict["r0_product"][0] += duration
             sys.stdout.flush()
             time0 = MPI.Wtime()
 
@@ -415,11 +423,13 @@ def build_kernel_matrix(
         total_duration = MPI.Wtime() - start_time
         profiling_dict["kernel_mat_time"] = [tiling_duration, "seconds"]
         profiling_dict["total_time"] = [total_duration, "seconds"]
+        profiling_dict["r0_product"] = [sum(vdot_time), "seconds"]
 
         print("\nFinished calculating all inner products.")
-        average = profiling_dict["r0_product"][0] / (iterations * entries_per_chunk**2)
-        print(f"\tAverage time per inner product (estimate): {round(average,4)} seconds.")
+        average = mean(vdot_time)
+        print(f"\tAverage time per inner product: {round(average,4)} seconds.")
         profiling_dict["avg_product"] = [average, "seconds"]
+        profiling_dict["median_product"] = [median(vdot_time), "seconds"]
         print("")
 
         # If requested by user, dump `profiling_dict` to file
