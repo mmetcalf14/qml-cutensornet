@@ -28,7 +28,6 @@ minutes_per_checkpoint = 30
 
 # Simulation parameters.
 config = Config(
-    chi = 8,
     value_of_zero = 1e-16
 )
 

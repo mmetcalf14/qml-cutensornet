@@ -148,13 +148,6 @@ def build_kernel_matrix(
 
     entries_per_chunk = int(np.ceil(len(X) / n_procs))
     max_mps_per_cpu = 2*entries_per_chunk  # X + Y chunks
-    max_chi = int(np.sqrt(cpu_max_mem*10**9 / (32*n_qubits*max_mps_per_cpu)))
-    if config.chi > max_chi:
-        raise ValueError(
-            f"Selected bond dimension ({config.chi}) is too large. "
-            f"We cannot guarantee there will be enough RAM to run the experiment. "
-            f"Consider reducing chi to {max_chi} or increasing the number of CPUs."
-        )
 
     # Checkpointing file
     pathlib.Path("tmp").mkdir(exist_ok=True)
@@ -245,7 +238,6 @@ def build_kernel_matrix(
 
         if Y is not None:
             print("\nContracting the MPS of the circuits from the Y dataset...")
-            print(f"\tUsing chi = {config.chi}")
         sys.stdout.flush()
 
     # Each CPU contracts the MPS from its Y chunk (only if Y != X)

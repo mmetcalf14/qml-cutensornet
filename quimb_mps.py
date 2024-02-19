@@ -6,7 +6,6 @@ from quimb.tensor.circuit import CircuitMPS
 from quimb.tensor import MatrixProductState
 
 class Config(NamedTuple):
-    chi: int
     value_of_zero: float
 
 
@@ -33,7 +32,7 @@ def simulate(circ: Circuit, config: Config) -> MatrixProductState:
         else:
             raise Exception(f"Unknown gate {gate.op.type}")
 
-    mps.psi.compress(max_bond=config.chi, cutoff=config.value_of_zero, cutoff_mode="abs")
+    mps.psi.compress(cutoff=config.value_of_zero, cutoff_mode="abs")
     return mps.psi
 
 
