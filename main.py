@@ -66,6 +66,10 @@ def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
 if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
+config = ConfigMPS(
+  value_of_zero=1e-16
+)
+
 # QML model parameters
 num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
@@ -99,7 +103,9 @@ if rank == root:
 # Load data and prepare #
 #########################
 
-train_features, train_labels, test_features, test_labels = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
+data = pd.read_csv('datasets/'+ data_file)
+
+x_train, y_train, x_test, y_test = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
 
 transformer = QuantileTransformer(output_distribution='normal')
 x_train = transformer.fit_transform(x_train)

@@ -25,8 +25,14 @@ class KernelStateAnsatz:
         ansatz_circ: The symbolic circuit to be used as ansatz.
         feature_symbol_list: The list of symbols in the circuit, each corresponding to a feature.
     """
-    def __init__(self, num_qubits: int, reps: int, gamma: float, entanglement_map: list[tuple[int, int]], hadamard_init: bool=True,
-        onebpaulis: list[Pauli]=[Pauli.Z], twobpaulis: list[tuple[Pauli]]=[(Pauli.X,Pauli.X)]):
+    def __init__(
+        self,
+        num_qubits: int,
+        reps: int,
+        gamma: float,
+        entanglement_map: list[tuple[int, int]],
+        hadamard_init: bool=True,
+    ):
         """Generate the ansatz circuit and store it. The circuit has as many symbols as qubits, which
         is also the same number of features in the data set. Multiple gates will use the same symbols;
         particularly, 1-qubit gates acting on qubit `i` all use the same symbol, and two qubit gates
@@ -40,8 +46,6 @@ class KernelStateAnsatz:
                 for now limit entanglement only to two body terms
             hadamard_init: whether a layer of H gates should be applied to all qubits
                 at the beginning of the circuit.
-            onebpaulis: single-qubit Pauli operators for the circuit
-            twobpaulis: two-qubit Pauli operators for the circuit
         """
 
         self.one_q_symbol_list = []
@@ -55,21 +59,15 @@ class KernelStateAnsatz:
                 self.ansatz_circ.H(i)
 
         for _ in range(reps):
-            for pauli in onebpaulis:
-                for i in range(num_qubits):
-                    exponent = (2/np.pi)*gamma*self.feature_symbol_list[i]
-                    self.ansatz_circ.add_pauliexpbox(
-                        PauliExpBox([pauli], exponent), qubits=[i]
-                    )
+            for i in range(num_qubits):
+                exponent = (1/np.pi)*gamma*self.feature_symbol_list[i]
+                self.ansatz_circ.Rz(exponent, i)
 
-            for (pauli0, pauli1) in twobpaulis:
-                for (q0, q1) in entanglement_map:
-                    symb0 = self.feature_symbol_list[q0]
-                    symb1 = self.feature_symbol_list[q1]
-                    exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
-                    self.ansatz_circ.add_pauliexpbox(
-                        PauliExpBox([pauli0, pauli1], exponent), qubits=[q0, q1]
-                    )
+            for (q0, q1) in entanglement_map:
+                symb0 = self.feature_symbol_list[q0]
+                symb1 = self.feature_symbol_list[q1]
+                exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
+                self.ansatz_circ.XXPhase(exponent, q0, q1)
 
         # Apply TKET routing to compile circuit to line architecture
         cu = CompilationUnit(self.ansatz_circ)
@@ -145,6 +143,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
     # Dictionary to keep track of profiling information
     if rank == root:
         profiling_dict = dict()
+        profiling_dict["n_procs"] = [n_procs, "gpus"]
         profiling_dict["lenX"] = [len(X), "entries"]
         profiling_dict["lenY"] = [None if Y is None else len(Y), "entries"]
         start_time = MPI.Wtime()
@@ -415,8 +414,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
 
         # If requested by user, dump `profiling_dict` to file
         if info_file is not None:
-            with open(info_file, 'w') as fp:
+            with open(info_file+".json", 'w') as fp:
                 json.dump(profiling_dict, fp, indent=4)
-            print(f"Profiling information saved at {info_file}.\n")
 
     return kernel_mat
