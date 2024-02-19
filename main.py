@@ -135,8 +135,8 @@ ansatz = KernelStateAnsatz(
     hadamard_init=True
 )
 
-train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit)
-test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit)
+train_info = f"train_Nf{num_features}_r{reps}_g{gamma}_p{edge_probability}_nn{nearest_neighbors}_ms{map_strategy}_Ntr{n_illicit}_s{data_seed}_{data_file.split('.')[0]}"
+test_info = f"test_Nf{num_features}_r{reps}_g{gamma}_p{edge_probability}_nn{nearest_neighbors}_ms{map_strategy}_Ntr{n_illicit}_s{data_seed}_{data_file.split('.')[0]}"
 
 time0 = MPI.Wtime()
 kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, info_file=train_info, mpi_comm=mpi_comm)
