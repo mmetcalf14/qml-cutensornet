@@ -6,6 +6,7 @@ from cupy.cuda.runtime import getDeviceCount
 
 import numpy as np
 from sympy import Symbol
+from statistics import mean, median
 
 import cuquantum as cq
 from pytket import Circuit
@@ -140,7 +141,6 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
 
     entries_per_chunk = int(np.ceil(len(X) / n_procs))
     max_mps_per_gpu = 2*entries_per_chunk  # X + Y chunks
-    config.chi = int(np.sqrt(gpu_max_mem / (32*n_qubits*max_mps_per_gpu)))
 
     # Dictionary to keep track of profiling information
     if rank == root:
@@ -191,13 +191,11 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         print(f"[Rank 0] Circuit list generated. Time taken: {round(duration,2)} seconds.")
         profiling_dict["r0_circ_gen"] = [duration, "seconds"]
         print("\nContracting the MPS of the circuits from the X dataset...")
-        print(f"\tUsing chi = {config.chi}")
-        profiling_dict["chi"] = [config.chi, ""]
         sys.stdout.flush()
-        time0 = MPI.Wtime()
 
     # Each GPU contracts the MPS from its X chunk
     mps_x_chunk = []
+    mps_x_time = []
     with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
         progress_bar = 0
         progress_checkpoint = int(np.ceil(entries_per_chunk / 10))
@@ -205,7 +203,9 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         for k, circ in enumerate(circs_x_chunk):
             # Simulate the circuit and obtain the output state as an MPS
             if circ is not None:
+                time0 = MPI.Wtime()
                 mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
+                mps_x_time.append(MPI.Wtime() - time0)
             else:
                 mps = None
             mps_x_chunk.append(mps)
@@ -218,21 +218,22 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
     # Report back to user
     if rank == root:
         print("100%")
-        duration = MPI.Wtime() - time0
+        duration = sum(mps_x_time)
         print(f"[Rank 0] MPS of chunk X contracted. Time taken: {round(duration,2)} seconds.")
         profiling_dict["r0_circ_sim"] = [duration, "seconds"]
-        average = duration / sum(1 for mps in mps_x_chunk if mps is not None)
+        average = mean(mps_x_time)
         print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
         profiling_dict["avg_circ_sim"] = [average, "seconds"]
+        profiling_dict["median_circ_sim"] = [median(mps_x_time), "seconds"]
 
         if Y is not None:
             print("\nContracting the MPS of the circuits from the Y dataset...")
         sys.stdout.flush()
-        time0 = MPI.Wtime()
 
     # Each GPU contracts the MPS from its Y chunk (only if Y != X)
     if Y is not None:
         mps_y_chunk = []
+        mps_y_time = []
         with CuTensorNetHandle(device_id) as libhandle:  # Different handle for each process
             progress_bar = 0
             progress_checkpoint = int(np.ceil(entries_per_chunk / 10))
@@ -240,7 +241,9 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
             for k, circ in enumerate(circs_y_chunk):
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
+                    time0 = MPI.Wtime()
                     mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
+                    mps_y_time.append(MPI.Wtime() - time0)
                 else:
                     mps = None
                 mps_y_chunk.append(mps)
@@ -253,11 +256,13 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         # Report back to user
         if rank == root:
             print("100%")
-            duration = MPI.Wtime() - time0
+            duration = sum(mps_y_time)
             print(f"[Rank 0] MPS of chunk Y contracted. Time taken: {round(duration,2)} seconds.")
             profiling_dict["r0_circ_sim"][0] += duration
-            average = duration / sum(1 for mps in mps_y_chunk if mps is not None)
+            average = mean(mps_x_time + mps_y_time)
             print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
+            profiling_dict["avg_circ_sim"] = [average, "seconds"]
+            profiling_dict["median_circ_sim"] = [median(mps_x_time + mps_y_time), "seconds"]
 
     # If Y == X then Y chunk for the first iteration will be a copy of the X chunk
     else:
@@ -284,7 +289,6 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         print("\nCalculating kernel matrix...")
         profiling_dict["r_nonRR_recv"] = [0, "seconds"]
         profiling_dict["r0_RR_recv"] = [0, "seconds"]
-        profiling_dict["r0_product"] = [0, "seconds"]
         sys.stdout.flush()
         tiling_start_time = MPI.Wtime()
 
@@ -292,6 +296,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
     len_Y = len(Y) if Y is not None else len(X)
     kernel_mat = np.zeros(shape=(len_Y, len(X)))
 
+    vdot_time = []
     # Compute tiles of the kernel-matrix and pass the Y chunks around in round robin
     if Y is not None:
         iterations = y_chunks
@@ -342,7 +347,10 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
                 for j, y_mps in enumerate(mps_y_chunk):
                     if y_mps is None: break  # Reached the padded entries; stop
 
+                    time_a = MPI.Wtime()
                     overlap = x_mps.vdot(y_mps)
+                    vdot_time.append(MPI.Wtime() - time_a)
+
                     kernel_entry = (overlap*np.conj(overlap)).real
                     x_index = i + entries_per_chunk*rank
                     y_index = j + entries_per_chunk*((rank+this_iteration) % y_chunks)
@@ -372,7 +380,6 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
             print("\t100%")
             duration = MPI.Wtime() - time0
             print(f"\t[Rank 0] Inner products calculated. Time taken: {round(duration,2)} seconds.")
-            profiling_dict["r0_product"][0] += duration
             sys.stdout.flush()
             time0 = MPI.Wtime()
 
@@ -397,11 +404,13 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         total_duration = MPI.Wtime() - start_time
         profiling_dict["kernel_mat_time"] = [tiling_duration, "seconds"]
         profiling_dict["total_time"] = [total_duration, "seconds"]
+        profiling_dict["r0_product"] = [sum(vdot_time), "seconds"]
 
         print("\nFinished calculating all inner products.")
-        average = profiling_dict["r0_product"][0] / (iterations * entries_per_chunk**2)
-        print(f"\tAverage time per inner product (estimate): {round(average,4)} seconds.")
+        average = mean(vdot_time)
+        print(f"\tAverage time per inner product: {round(average,4)} seconds.")
         profiling_dict["avg_product"] = [average, "seconds"]
+        profiling_dict["median_product"] = [median(vdot_time), "seconds"]
         print("")
 
         # If requested by user, dump `profiling_dict` to file
