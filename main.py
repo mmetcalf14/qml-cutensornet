@@ -44,14 +44,44 @@ def entanglement_graph(graph_type, nq, nn=None, ep=None, seed=None):
 
     if graph_type == 'random':
         graph = nx.gnp_random_graph(nq, ep, seed=seed)
-        map = nx.edges(graph)
+        random_map = nx.edges(graph)
+        # Sort the entangling gates (given by the pairs in the `map`) so
+        # that they form batches of gates that can be applied in parallel. This is
+        # possible because all of the two-qubit gates in each layer commute with
+        # each other.
+        map = []
+        remaining_pairs = {(min(p), max(p)) for p in random_map}
+        while remaining_pairs:
+            batch = []
+            q_used = set()
+
+            for (q0, q1) in remaining_pairs:
+                if q0 not in q_used and q1 not in q_used:
+                    batch.append((q0, q1))
+                    q_used.add(q0)
+                    q_used.add(q1)
+
+            for p in batch:
+                remaining_pairs.remove(p)
+                map.append(p)
+
     elif graph_type == 'linear':
-        map = [(i, i + j) for i in range(nq - 1) for j in range(1, nn + 1) if (i + j) < nq]
+        for d in range(1, nn+1):  # For all distances from 1 to nn
+            busy = set()  # Collect the right qubits of pairs on the first layer for this distance
+            # Apply each gate between qubit i and its i+d (if it fits). Do so in two layers.
+            for i in range(nq):
+                if i not in busy and i+d < nq:  # All of these gates can be applied in one layer
+                    map.append((i, i+d))
+                    busy.add(i+d)
+            # Apply the other half of the gates on distance d; those whose left qubit is in `busy`
+            for i in busy:
+                if i+d < nq:
+                    map.append((i, i+d))
     else:
         raise RuntimeError("You have not specified a valid entanglement map")
 
     return map
-    
+
 def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
     """
     Function to sample from data and then divide into train/test sets
@@ -65,7 +95,7 @@ def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
     train_df, test_df = train_test_split(data_reduced,  stratify=data_reduced['Class'], test_size=test_frac ,random_state=seed*26+19)
     train_labels = train_df.pop('Class')
     test_labels = test_df.pop('Class')
-    
+
     return np.array(train_df), np.array(train_labels,dtype='int'), np.array(test_df), np.array(test_labels,dtype='int')
 
 # Simulation parameters.
@@ -97,7 +127,7 @@ if rank == root:
     print(f"\tentanglement_map: {entanglement_map}")
     print("")
     print(f"\tn_illicit_train: {n_illicit}")
-    print(f"\tn_licit_train: {n_licit}")
+    print(f"\tn_licit: {n_licit}")
     print("")
     sys.stdout.flush()
 
@@ -112,19 +142,19 @@ data = pd.read_csv('datasets/'+ data_file)
 train_features, train_labels, test_features, test_labels = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
 
 transformer = QuantileTransformer(output_distribution='normal')
-train_features = transformer.fit_transform(train_features)
-test_features = transformer.transform(test_features)
+x_train = transformer.fit_transform(x_train)
+x_test = transformer.transform(x_test)
 
 scaler = StandardScaler()
-train_features = scaler.fit_transform(train_features)
-test_features = scaler.transform(test_features)
+x_train = scaler.fit_transform(x_train)
+x_test = scaler.transform(x_test)
 
-minmax_scale = MinMaxScaler((0,2)).fit(train_features)
-train_features = minmax_scale.transform(train_features)
-test_features = minmax_scale.transform(test_features)
+minmax_scale = MinMaxScaler((0,2)).fit(x_train)
+x_train = minmax_scale.transform(x_train)
+x_test = minmax_scale.transform(x_test)
 
-reduced_train_features = train_features[:,0:num_features]
-reduced_test_features = test_features[:,0:num_features]
+reduced_train_features = x_train[:,0:num_features]
+reduced_test_features = x_test[:,0:num_features]
 
 
 #################################
@@ -190,15 +220,15 @@ if rank == root:
         svc = SVC(kernel="precomputed", C=r, tol=1e-3, verbose=False)
         # scale might work best as 1/Nfeautres
 
-        svc.fit(kernel_train, train_labels)
+        svc.fit(kernel_train, y_train)
         test_predict = svc.predict(kernel_test)
-        accuracy = accuracy_score(test_labels,test_predict)
+        accuracy = accuracy_score(y_test,test_predict)
         print('accuracy: ', accuracy)
-        precision = precision_score(test_labels,test_predict)
+        precision = precision_score(y_test,test_predict)
         print('precision: ', precision)
-        recall = recall_score(test_labels, test_predict)
+        recall = recall_score(y_test, test_predict)
         print('recall: ', recall)
-        auc = roc_auc_score(test_labels, test_predict)
+        auc = roc_auc_score(y_test, test_predict)
         print('auc: ', auc)
         test_results.append([r,accuracy, precision, recall, auc])
 
@@ -209,15 +239,15 @@ if rank == root:
         svc = SVC(kernel="precomputed", C=r, tol=1e-3, verbose=False)
         # scale might work best as 1/Nfeautre
 
-        svc.fit(kernel_train, train_labels)
+        svc.fit(kernel_train, y_train)
         test_predict = svc.predict(kernel_train)
-        accuracy = accuracy_score(train_labels,test_predict)
+        accuracy = accuracy_score(y_train,test_predict)
         print('accuracy: ', accuracy)
-        precision = precision_score(train_labels,test_predict)
+        precision = precision_score(y_train,test_predict)
         print('precision: ', precision)
-        recall = recall_score(train_labels, test_predict)
+        recall = recall_score(y_train, test_predict)
         print('recall: ', recall)
-        auc = roc_auc_score(train_labels, test_predict)
+        auc = roc_auc_score(y_train, test_predict)
         print('auc: ', auc)
         train_results.append([r,accuracy, precision, recall, auc])
 

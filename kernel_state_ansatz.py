@@ -8,7 +8,7 @@ from mpi4py import MPI
 import sys
 import json
 import pathlib
-from statistics import median
+from statistics import median, mean
 
 import numpy as np
 from sympy import Symbol
@@ -225,8 +225,11 @@ def build_kernel_matrix(
     # Each process picks a tile and computes it
     tile_times = []
     start_time = MPI.Wtime()
-    tile_chi_x = []
-    tile_chi_y = []
+    all_chi_x = []
+    all_chi_y = []
+    all_time_x = []
+    all_time_y = []
+    all_time_vdot = []
     for k, (y_slice, x_slice) in enumerate(tiles):
         if k % n_procs == rank:  # Otherwise, this process is not meant to compute this tile
 
@@ -242,14 +245,17 @@ def build_kernel_matrix(
 
             # Otherwise, compute the tile
             tile_ix = np.ix_(range(*y_slice), range(*x_slice))
-            kernel_mat[tile_ix], av_chi_x, av_chi_y = KernelPkg.compute_tile(
+            kernel_mat[tile_ix], chi_x, chi_y, time_x, time_y, time_vdot = KernelPkg.compute_tile(
                 ansatz.ansatz_circ.n_qubits,
                 x_circs[x_slice[0]:x_slice[1]],
                 y_circs[y_slice[0]:y_slice[1]],
                 value_of_zero,
             )
-            tile_chi_x.append(sum(av_chi_x)/len(av_chi_x))
-            tile_chi_y.append(sum(av_chi_y)/len(av_chi_y))
+            all_chi_x += chi_x
+            all_chi_y += chi_y
+            all_time_x += time_x
+            all_time_y += time_y
+            all_time_vdot += time_vdot
 
             # If the kernel matrix is symmetrix (X==Y) and this is not a diagonal tile
             if Y is None and x_slice[0] != y_slice[0]:
@@ -280,14 +286,18 @@ def build_kernel_matrix(
         med_tile_time = median(tile_times)
         profiling_dict["median_tile_time"] = (med_tile_time, "seconds")
         print(f"[Rank {rank}] Median tile time is {round(med_tile_time,2)} seconds.")
-        avg_entry_time = 1000 * med_tile_time / tile_side**2
-        profiling_dict["avg_entry_time"] = (avg_entry_time, "ms")
-        profiling_dict["ave max chi x"] = (sum(tile_chi_x)/len(tile_chi_x),"chi x")
-        profiling_dict["ave max chi y"] = (sum(tile_chi_y)/len(tile_chi_y),"chi y")
-        print(f"\tIn average, each of entries takes {round(avg_entry_time,2)} ms.")
-        print(f"\tAverage max bond dimension x is {sum(tile_chi_x)/len(tile_chi_x)}")
-        print(f"\tAverage max bond dimension y is {sum(tile_chi_y)/len(tile_chi_y)}")
-        print("\tNote: this also includes MPS simulation.")
+        median_circ_sim = median(all_time_x + all_time_y)
+        profiling_dict["median_circ_sim"] = (median_circ_sim, "seconds")
+        median_product = median(all_time_vdot)
+        profiling_dict["median_product"] = (median_product, "seconds")
+        print(f"\tThe median MPS simulation time is {median_circ_sim} seconds.")
+        print(f"\tThe median of vdot execution time is {median_product} seconds.")
+
+
+        profiling_dict["ave max chi x"] = (mean(all_chi_x),"chi x")
+        profiling_dict["ave max chi y"] = (mean(all_chi_y),"chi y")
+        print(f"\tAverage max bond dimension x is {mean(all_chi_x)}")
+        print(f"\tAverage max bond dimension y is {mean(all_chi_y)}")
 
     # Dump `profiling_dict` to file
     if rank == root:
