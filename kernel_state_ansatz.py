@@ -1,3 +1,7 @@
+from julia.api import Julia
+jl = Julia(compiled_modules=False)  # TODO: Hopefully this can be avoided
+from julia import KernelPkg
+
 from typing import Optional
 from mpi4py import MPI
 
@@ -17,9 +21,6 @@ from pytket.passes import DefaultMappingPass
 from pytket.predicates import CompilationUnit
 from pytket.circuit import PauliExpBox, Pauli
 
-from julia.api import Julia
-jl = Julia(compiled_modules=False)  # TODO: Hopefully this can be avoided
-from julia import KernelPkg
 
 class KernelStateAnsatz:
     """Class that creates and stores a symbolic ansatz circuit and can be used to
@@ -64,13 +65,13 @@ class KernelStateAnsatz:
 
         for _ in range(reps):
             for i in range(num_qubits):
-                exponent = (1/np.pi)*gamma*self.feature_symbol_list[i]
+                exponent = (2/np.pi)*gamma*self.feature_symbol_list[i]
                 self.ansatz_circ.Rz(exponent, i)
 
             for (q0, q1) in entanglement_map:
                 symb0 = self.feature_symbol_list[q0]
                 symb1 = self.feature_symbol_list[q1]
-                exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
+                exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
                 self.ansatz_circ.XXPhase(exponent, q0, q1)
 
         # Apply TKET routing to compile circuit to line architecture

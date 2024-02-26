@@ -96,10 +96,8 @@ if rank == root:
     print(f"\tgamma: {gamma}")
     print(f"\tentanglement_map: {entanglement_map}")
     print("")
-    print(f"\tn_illicit_train: {n_illicit_train}")
-    print(f"\tn_licit_train: {n_licit_train}")
-    print(f"\tn_illicit_test: {n_illicit_test}")
-    print(f"\tn_licit_test: {n_licit_test}")
+    print(f"\tn_illicit_train: {n_illicit}")
+    print(f"\tn_licit_train: {n_licit}")
     print("")
     sys.stdout.flush()
 
@@ -128,6 +126,7 @@ test_features = minmax_scale.transform(test_features)
 reduced_train_features = train_features[:,0:num_features]
 reduced_test_features = test_features[:,0:num_features]
 
+
 #################################
 # Construction of kernel matrix #
 #################################
@@ -136,6 +135,8 @@ pathlib.Path("kernels").mkdir(exist_ok=True)
 pathlib.Path("data").mkdir(exist_ok=True)
 
 # Create the ansatz class
+if rank == root:
+    print("Getting kernel")
 ansatz = KernelStateAnsatz(
 	num_qubits=num_features,
 	reps=reps,
@@ -182,11 +183,11 @@ if rank == root:
 #############################
 
 if rank == root:
-    reg = [2,1.5,1,0.5,0.1,0.05,0.01]
+    reg = [4,3.5,3,2.5,2,1.5,1,0.5,0.1,0.05,0.01]
     test_results = []
     for key, r in enumerate(reg):
         print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+        svc = SVC(kernel="precomputed", C=r, tol=1e-3, verbose=False)
         # scale might work best as 1/Nfeautres
 
         svc.fit(kernel_train, train_labels)
@@ -205,8 +206,8 @@ if rank == root:
     print('\n Train Results\n')
     for key, r in enumerate(reg):
         print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
-        # scale might work best as 1/Nfeautres
+        svc = SVC(kernel="precomputed", C=r, tol=1e-3, verbose=False)
+        # scale might work best as 1/Nfeautre
 
         svc.fit(kernel_train, train_labels)
         test_predict = svc.predict(kernel_train)
@@ -220,5 +221,5 @@ if rank == root:
         print('auc: ', auc)
         train_results.append([r,accuracy, precision, recall, auc])
 
-    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit),train_results)
-    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit),test_results)
+    np.save('data/TrainData_Nf-{}_nn-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features,nearest_neighbors, reps, gamma, n_illicit),train_results)
+    np.save('data/TestData_Nf-{}_nn-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features,nearest_neighbors, reps, gamma, n_illicit),test_results)
