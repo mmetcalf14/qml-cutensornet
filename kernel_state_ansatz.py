@@ -15,7 +15,7 @@ from pytket.architecture import Architecture
 from pytket.passes import DefaultMappingPass
 from pytket.predicates import CompilationUnit
 from pytket.circuit import PauliExpBox, Pauli
-from pytket.extensions.cutensornet.mps import CuTensorNetHandle, ContractionAlg, ConfigMPS, simulate
+from pytket.extensions.cutensornet.structured_state import CuTensorNetHandle, SimulationAlgorithm, Config, simulate
 
 class KernelStateAnsatz:
     """Class that creates and stores a symbolic ansatz circuit and can be used to
@@ -92,7 +92,7 @@ class KernelStateAnsatz:
         return the_circuit
 
 
-def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mpi_comm=None, gpu_max_mem=40, svd_cutoff=1e-15) -> np.ndarray:
+def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mpi_comm=None, gpu_max_mem=40, svd_cutoff=1e-15) -> np.ndarray:
     """Use MPI to parallelise the calculation of entries of the kernel matrix.
 
     Notes:
@@ -100,7 +100,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
         possible is preferable for matters of efficiency.
 
     Args:
-        config: An instance of ConfigMPS setting the configuration of simulations.
+        config: An instance of Config setting the configuration of simulations.
         ansatz: a symbolic circuit describing the ansatz.
         X: A 2D array where `X[i, :]` corresponds to the i-th data point and
             each `X[:, j]` corresponds to the values of the j-th feature across
@@ -204,7 +204,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
             # Simulate the circuit and obtain the output state as an MPS
             if circ is not None:
                 time0 = MPI.Wtime()
-                mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
+                mps = simulate(libhandle, circ, SimulationAlgorithm.MPSxGate, config)
                 mps_x_time.append(MPI.Wtime() - time0)
                 mps_x_chi.append(max(max(mps.get_virtual_dimensions(i)) for i in range(len(mps))))
             else:
@@ -244,7 +244,7 @@ def build_kernel_matrix(config: ConfigMPS, ansatz: KernelStateAnsatz, X, Y=None,
                 # Simulate the circuit and obtain the output state as an MPS
                 if circ is not None:
                     time0 = MPI.Wtime()
-                    mps = simulate(libhandle, circ, ContractionAlg.MPSxGate, config)
+                    mps = simulate(libhandle, circ, SimulationAlgorithm.MPSxGate, config)
                     mps_y_time.append(MPI.Wtime() - time0)
                     mps_y_chi.append(max(max(mps.get_virtual_dimensions(i)) for i in range(len(mps))))
                 else:

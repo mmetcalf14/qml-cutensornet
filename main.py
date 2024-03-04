@@ -12,7 +12,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
 from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
-from pytket.extensions.cutensornet.mps import ConfigMPS
+from pytket.extensions.cutensornet.structured_state import Config
 
 mpi_comm = MPI.COMM_WORLD
 rank, n_procs = mpi_comm.Get_rank(), mpi_comm.Get_size()
@@ -96,7 +96,7 @@ def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
 if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
-config = ConfigMPS(
+config = Config(
   value_of_zero=1e-16
 )
 
