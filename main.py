@@ -27,8 +27,6 @@ def entanglement_graph(graph_type, nq, nn=None, ep=None, seed=None):
     ep (float): Edge probability for random graph
     seed (int): Seed for the random graph
     """
-    map = []
-
     if nn == None:
         nn = 1
     if ep == None:
@@ -58,6 +56,7 @@ def entanglement_graph(graph_type, nq, nn=None, ep=None, seed=None):
                 map.append(p)
 
     elif graph_type == 'linear':
+        map = []
         for d in range(1, nn+1):  # For all distances from 1 to nn
             busy = set()  # Collect the right qubits of pairs on the first layer for this distance
             # Apply each gate between qubit i and its i+d (if it fits). Do so in two layers.
@@ -69,6 +68,31 @@ def entanglement_graph(graph_type, nq, nn=None, ep=None, seed=None):
             for i in busy:
                 if i+d < nq:
                     map.append((i, i+d))
+
+    elif graph_type == 'squares':
+        # Use NetworkX to generate a square lattice
+        l = int(np.ceil(np.sqrt(nq)))  # Make a square lattice of side l, making sure that nq qubits fit
+        g = nx.grid_2d_graph(l, l)  # Nodes are coordinates (i,j) of the square lattice
+        coord_to_integer = {coord: i for i, coord in enumerate(g.nodes)}
+
+        h_even_edges = [(pA, pB) for (pA, pB) in g.edges if pA[0]==pB[0] and pA[1]%2==0]
+        h_odd_edges = [(pA, pB) for (pA, pB) in g.edges if pA[0]==pB[0] and pA[1]%2==1]
+        v_even_edges = [(pA, pB) for (pA, pB) in g.edges if pA[1]==pB[1] and pA[0]%2==0]
+        v_odd_edges = [(pA, pB) for (pA, pB) in g.edges if pA[1]==pB[1] and pA[0]%2==1]
+
+        # Sanity check: we did not repeat or miss any edges
+        assert len(h_even_edges+h_odd_edges+v_even_edges+v_odd_edges) == len(g.edges)
+        assert set(h_even_edges+h_odd_edges+v_even_edges+v_odd_edges) == set(g.edges)
+
+        # Convert to entanglement map
+        map = []
+        map += [(coord_to_integer[pA], coord_to_integer[pB]) for (pA, pB) in h_even_edges]
+        map += [(coord_to_integer[pA], coord_to_integer[pB]) for (pA, pB) in h_odd_edges]
+        map += [(coord_to_integer[pA], coord_to_integer[pB]) for (pA, pB) in v_even_edges]
+        map += [(coord_to_integer[pA], coord_to_integer[pB]) for (pA, pB) in v_odd_edges]
+        # Finally, fitler out so there's only nq qubits instead of l*l
+        map = [edge for edge in map if edge[0] < nq and edge[1] < nq]
+
     else:
         raise RuntimeError("You have not specified a valid entanglement map")
 
