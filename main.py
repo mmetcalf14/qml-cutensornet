@@ -122,10 +122,16 @@ if rank == root:
     print(f"\tnum_features: {num_features}")
     print(f"\treps: {reps}")
     print(f"\tgamma: {gamma}")
+    print(f"\tedge_probability: {edge_probability}")
+    print(f"\tnearest_neighbors: {nearest_neighbors}")
+    print(f"\tmap_strategy: {map_strategy}")
     print(f"\tentanglement_map: {entanglement_map}")
     print("")
     print(f"\tn_illicit: {n_illicit}")
     print(f"\tn_licit: {n_licit}")
+    print("")
+    print(f"\tdata_seed: {data_seed}")
+    print(f"\tdata_file: {data_file}")
     print("")
     sys.stdout.flush()
 
@@ -173,14 +179,14 @@ kernel_train = build_kernel_matrix(config, ansatz, X = reduced_train_features, i
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit),kernel_train)
+    np.save(f"kernels/{train_info}.npy", kernel_train)
 
 time0 = MPI.Wtime()
 kernel_test = build_kernel_matrix(config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, mpi_comm=mpi_comm)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit),kernel_test)
+    np.save(f"kernels/{test_info}.npy", kernel_test)
     print('Test Kernel\n',kernel_test)
 
 #############################
@@ -226,5 +232,5 @@ if rank == root:
         print('auc: ', auc)
         train_results.append([r,accuracy, precision, recall, auc])
 
-    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit),train_results)
-    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit),test_results)
+    np.save(f"data/{train_info}.npy", train_results)
+    np.save(f"data/{test_info}.npy", test_results)
