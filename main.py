@@ -139,7 +139,7 @@ if rank == root:
 #  Not for now, this is not a bottleneck.
 data = pd.read_csv('datasets/'+ data_file)
 
-train_features, train_labels, test_features, test_labels = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
+x_train, y_train, x_test, y_test = draw_sample(data,n_illicit, n_licit, 0.2, data_seed)
 
 transformer = QuantileTransformer(output_distribution='normal')
 x_train = transformer.fit_transform(x_train)
