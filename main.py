@@ -120,8 +120,11 @@ def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
 if len(sys.argv) <= 2:
     raise ValueError("Call script as \'python main.py <num_features> <reps>\'.")
 
+truncation_error = 1e-16
+
 config = Config(
-  value_of_zero=1e-16
+  value_of_zero=0,
+  truncation_fidelity=1-truncation_error
 )
 
 # QML model parameters
