@@ -63,9 +63,15 @@ function build_and_sim_circ(circuit, site_inds, value_of_zero::Float64)
     end
   end
 
+  # ITensors uses cutoff wrt the square of the singular values, rather than directly.
+  # Consequently, if we use value_of_zero=1e-16, in reality we would be truncating any
+  # singular value `s` such that `s^2 < 1e-16`; i.e. any `s < 1e-8`, so it'd truncate more
+  # than what we intended. Instead, we truncate wrt `cutoff=value_of_zero^2` so that we
+  # get the desired truncation when `s < 1e-16`, which coincides with pytket-cutensornet.
+  itensors_cutoff = value_of_zero^2
   # Simulate the circuit
   mps_time = @elapsed begin
-    ψ = apply(gates, MPS(site_inds, "0"); cutoff=value_of_zero) 
+    ψ = apply(gates, MPS(site_inds, "0"); cutoff=itensors_cutoff, use_absolute_cutoff=true)
   end
   max_chi = maxlinkdim(ψ)
   return ψ, max_chi, mps_time
