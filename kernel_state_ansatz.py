@@ -9,11 +9,7 @@ from sympy import Symbol
 from statistics import mean, median
 
 import cuquantum as cq
-from pytket import Circuit
-from pytket.transform import Transform
-from pytket.architecture import Architecture
-from pytket.passes import DefaultMappingPass
-from pytket.predicates import CompilationUnit
+from pytket import Circuit, OpType
 from pytket.circuit import PauliExpBox, Pauli
 from pytket.extensions.cutensornet.structured_state import CuTensorNetHandle, SimulationAlgorithm, Config, simulate
 
@@ -69,14 +65,29 @@ class KernelStateAnsatz:
                 exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
                 self.ansatz_circ.XXPhase(exponent, q0, q1)
 
-        # Apply TKET routing to compile circuit to line architecture
-        cu = CompilationUnit(self.ansatz_circ)
-        architecture = Architecture(
-            [(i, i + 1) for i in range(self.ansatz_circ.n_qubits - 1)]
-        )
-        DefaultMappingPass(architecture).apply(cu)
-        self.ansatz_circ = cu.circuit
-        Transform.DecomposeBRIDGE().apply(self.ansatz_circ)
+        # Apply routing by adding SWAPs eagerly just before the XXPhase gates
+        qubit_pos = {q: p for p, q in enumerate(self.ansatz_circ.qubits)}
+        routed_circ = Circuit(self.ansatz_circ.n_qubits)  # The new circuit
+
+        for cmd in self.ansatz_circ.get_commands():
+            # Add it directly to the circuit if it's not an Rxx (aka XXPhase) gate
+            if cmd.op.type != OpType.XXPhase:
+                routed_circ.add_gate(cmd.op, cmd.qubits)
+            # If it is Rxx, add SWAPs as necessary
+            else:
+                q0 = qubit_pos[cmd.qubits[0]]
+                q1 = qubit_pos[cmd.qubits[1]]
+                (q0, q1) = (min(q0,q1), max(q0,q1))
+                # Add SWAP gates
+                for q in range(q0, q1-1):
+                    routed_circ.SWAP(q,q+1)
+                # Apply XXPhase gate
+                routed_circ.add_gate(cmd.op, [q1-1,q1])
+                # Apply SWAP gates on the opposite order to return qubit to position
+                for q in reversed(range(q0, q1-1)):
+                    routed_circ.SWAP(q,q+1)
+
+                self.ansatz_circ = routed_circ
 
 
     def circuit_for_data(self, feature_values: list[float]) -> Circuit:
