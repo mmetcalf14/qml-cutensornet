@@ -42,7 +42,7 @@ function ITensors.op(::OpName"TKET_ZZPhase", t::SiteType"Qubit"; α::Number)
 end
 
 # Build and simulate the given circuit (as a list of gates)
-function build_and_sim_circ(circuit, site_inds, value_of_zero::Float64)
+function build_and_sim_circ(circuit, site_inds, cutoff::Float64)
   gates::Vector{ITensor} = []
 
   for (name, qubits, params) in circuit
@@ -63,22 +63,16 @@ function build_and_sim_circ(circuit, site_inds, value_of_zero::Float64)
     end
   end
 
-  # ITensors uses cutoff wrt the square of the singular values, rather than directly.
-  # Consequently, if we use value_of_zero=1e-16, in reality we would be truncating any
-  # singular value `s` such that `s^2 < 1e-16`; i.e. any `s < 1e-8`, so it'd truncate more
-  # than what we intended. Instead, we truncate wrt `cutoff=value_of_zero^2` so that we
-  # get the desired truncation when `s < 1e-16`, which coincides with pytket-cutensornet.
-  itensors_cutoff = value_of_zero^2
   # Simulate the circuit
   mps_time = @elapsed begin
-    ψ = apply(gates, MPS(site_inds, "0"); cutoff=itensors_cutoff, use_absolute_cutoff=true)
+    ψ = apply(gates, MPS(site_inds, "0"); cutoff=cutoff)
   end
   max_chi = maxlinkdim(ψ)
   return ψ, max_chi, mps_time
 end
 
 # Compute all of the entries of a tile; includes MPS simulation of the circuits
-function compute_tile(n_qubits::Int64, x_circs, y_circs, value_of_zero::Float64)
+function compute_tile(n_qubits::Int64, x_circs, y_circs, cutoff::Float64)
   tile = zeros(size(y_circs, 1), size(x_circs, 1))
   site_inds = siteinds("Qubit", n_qubits)
 
@@ -88,7 +82,7 @@ function compute_tile(n_qubits::Int64, x_circs, y_circs, value_of_zero::Float64)
   x_chi = []
   x_time = []
   for circ in eachrow(x_circs)
-    mps, chi, time = build_and_sim_circ(circ, site_inds, value_of_zero)
+    mps, chi, time = build_and_sim_circ(circ, site_inds, cutoff)
     push!(x_time, time)
     push!(x_chi,chi)
     push!(x_mps,mps)
@@ -98,7 +92,7 @@ function compute_tile(n_qubits::Int64, x_circs, y_circs, value_of_zero::Float64)
   y_chi = []
   y_time = []
   for circ in eachrow(y_circs)
-    mps, chi, time = build_and_sim_circ(circ, site_inds, value_of_zero)
+    mps, chi, time = build_and_sim_circ(circ, site_inds, cutoff)
     push!(y_time, time)
     push!(y_chi,chi)
     push!(y_mps,mps)

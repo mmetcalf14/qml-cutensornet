@@ -136,7 +136,7 @@ def build_kernel_matrix(
         X,
         Y=None,
         info_file="info_file",
-        value_of_zero: float=1e-16,
+        truncation_error: float=1e-16,
         number_of_tiles: Optional[int]=None,
     ) -> np.ndarray:
     """Calculation of entries of the kernel matrix.
@@ -156,7 +156,7 @@ def build_kernel_matrix(
             all data points. If not provided it is set to be equal to `X`.
         info_file: The name of the file where to save performance information of this call.
             Also used as a suffix for the checkpointing file. Defaults to "info_file".
-        value_of_zero: The absolute cutoff below which singular values are removed.
+        truncation_error: The absolute cutoff below which singular values are removed.
         number_of_tiles: Determines a lower bound of the number of tiles the kernel matrix
             is split into. This should often be a multiple of the number of processes, so
             that each process is assigned the same number of tiles. Larger tiles (i.e. less
@@ -218,7 +218,7 @@ def build_kernel_matrix(
         profiling_dict["lenX"] = (lenX, "entries")
         profiling_dict["lenY"] = (None if Y is None else lenY, "entries")
         profiling_dict["n_tiles"] = (n_tiles, "tiles")
-        profiling_dict["value_of_zero"] = (value_of_zero, "")
+        profiling_dict["truncation_error"] = (truncation_error, "")
         profiling_dict["vdots_per_tile"] = (tile_side**2, "entries")
 
         print(f"\nKernel matrix split into {n_tiles} tiles of {tile_side**2} entries each.")
@@ -258,7 +258,7 @@ def build_kernel_matrix(
                 ansatz.ansatz_circ.n_qubits,
                 x_circs[x_slice[0]:x_slice[1]],
                 y_circs[y_slice[0]:y_slice[1]],
-                value_of_zero,
+                truncation_error,
             )
             all_chi_x += chi_x
             all_chi_y += chi_y
