@@ -13,12 +13,7 @@ from statistics import median, mean
 import numpy as np
 from sympy import Symbol
 
-from pytket import Circuit
-from pytket.circuit import OpType
-from pytket.transform import Transform
-from pytket.architecture import Architecture
-from pytket.passes import DefaultMappingPass
-from pytket.predicates import CompilationUnit
+from pytket import Circuit, OpType
 from pytket.circuit import PauliExpBox, Pauli
 
 
@@ -74,14 +69,29 @@ class KernelStateAnsatz:
                 exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
                 self.ansatz_circ.XXPhase(exponent, q0, q1)
 
-        # Apply TKET routing to compile circuit to line architecture
-        cu = CompilationUnit(self.ansatz_circ)
-        architecture = Architecture(
-            [(i, i + 1) for i in range(self.ansatz_circ.n_qubits - 1)]
-        )
-        DefaultMappingPass(architecture).apply(cu)
-        self.ansatz_circ = cu.circuit
-        Transform.DecomposeBRIDGE().apply(self.ansatz_circ)
+        # Apply routing by adding SWAPs eagerly just before the XXPhase gates
+        qubit_pos = {q: p for p, q in enumerate(self.ansatz_circ.qubits)}
+        routed_circ = Circuit(self.ansatz_circ.n_qubits)  # The new circuit
+
+        for cmd in self.ansatz_circ.get_commands():
+            # Add it directly to the circuit if it's not an Rxx (aka XXPhase) gate
+            if cmd.op.type != OpType.XXPhase:
+                routed_circ.add_gate(cmd.op, cmd.qubits)
+            # If it is Rxx, add SWAPs as necessary
+            else:
+                q0 = qubit_pos[cmd.qubits[0]]
+                q1 = qubit_pos[cmd.qubits[1]]
+                (q0, q1) = (min(q0,q1), max(q0,q1))
+                # Add SWAP gates
+                for q in range(q0, q1-1):
+                    routed_circ.SWAP(q,q+1)
+                # Apply XXPhase gate
+                routed_circ.add_gate(cmd.op, [q1-1,q1])
+                # Apply SWAP gates on the opposite order to return qubit to position
+                for q in reversed(range(q0, q1-1)):
+                    routed_circ.SWAP(q,q+1)
+
+                self.ansatz_circ = routed_circ
 
     def circuit_for_data(
         self,
@@ -127,7 +137,7 @@ def build_kernel_matrix(
         X,
         Y=None,
         info_file="info_file",
-        value_of_zero: float=1e-16,
+        truncation_error: float=1e-16,
         number_of_tiles: Optional[int]=None,
     ) -> np.ndarray:
     """Calculation of entries of the kernel matrix.
@@ -147,7 +157,7 @@ def build_kernel_matrix(
             all data points. If not provided it is set to be equal to `X`.
         info_file: The name of the file where to save performance information of this call.
             Also used as a suffix for the checkpointing file. Defaults to "info_file".
-        value_of_zero: The absolute cutoff below which singular values are removed.
+        truncation_error: The absolute cutoff below which singular values are removed.
         number_of_tiles: Determines a lower bound of the number of tiles the kernel matrix
             is split into. This should often be a multiple of the number of processes, so
             that each process is assigned the same number of tiles. Larger tiles (i.e. less
@@ -209,7 +219,7 @@ def build_kernel_matrix(
         profiling_dict["lenX"] = (lenX, "entries")
         profiling_dict["lenY"] = (None if Y is None else lenY, "entries")
         profiling_dict["n_tiles"] = (n_tiles, "tiles")
-        profiling_dict["value_of_zero"] = (value_of_zero, "")
+        profiling_dict["truncation_error"] = (truncation_error, "")
         profiling_dict["vdots_per_tile"] = (tile_side**2, "entries")
 
         print(f"\nKernel matrix split into {n_tiles} tiles of {tile_side**2} entries each.")
@@ -249,7 +259,7 @@ def build_kernel_matrix(
                 ansatz.ansatz_circ.n_qubits,
                 x_circs[x_slice[0]:x_slice[1]],
                 y_circs[y_slice[0]:y_slice[1]],
-                value_of_zero,
+                truncation_error,
             )
             all_chi_x += chi_x
             all_chi_y += chi_y

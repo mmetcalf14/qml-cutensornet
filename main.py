@@ -123,7 +123,7 @@ def draw_sample(df, ndmin, ndmaj, test_frac=0.2, seed=123):
     return np.array(train_df), np.array(train_labels,dtype='int'), np.array(test_df), np.array(test_labels,dtype='int')
 
 # Simulation parameters.
-value_of_zero = 1e-16
+truncation_error = 1e-16
 n_tiles = None  # Use default choice
 
 # QML model parameters
@@ -208,7 +208,7 @@ kernel_train = build_kernel_matrix(
     ansatz,
     X=reduced_train_features,
     info_file=train_info,
-    value_of_zero=value_of_zero,
+    truncation_error=truncation_error,
     number_of_tiles=n_tiles,
 )
 time1 = MPI.Wtime()
@@ -223,7 +223,7 @@ kernel_test = build_kernel_matrix(
     X=reduced_train_features,
     Y=reduced_test_features,
     info_file=test_info,
-    value_of_zero=value_of_zero,
+    truncation_error=truncation_error,
     number_of_tiles=n_tiles,
 )
 time1 = MPI.Wtime()
