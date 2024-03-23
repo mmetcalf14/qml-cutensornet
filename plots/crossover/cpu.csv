@@ -1,0 +1,5 @@
+reps,nn,G,Ansatz,avg_max_chi,mps sim time,dot prod time
+2,2,0.5,Linear,9,0.4233014855,0.001366
+2,4,0.5,linear,21,5.469764,0.00251859
+2,6,0.5,linear,53,28.13507,0.01038991015
+2,8,0.5,linear,148,122.3304731,0.08755
