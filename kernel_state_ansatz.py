@@ -59,7 +59,7 @@ class KernelStateAnsatz:
 
         for _ in range(reps):
             for i in range(num_qubits):
-                exponent = (1/np.pi)*gamma*self.feature_symbol_list[i]
+                exponent = (2/np.pi)*gamma*self.feature_symbol_list[i]
                 self.ansatz_circ.Rz(exponent, i)
 
             for (q0, q1) in entanglement_map:
