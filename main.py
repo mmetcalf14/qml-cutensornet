@@ -221,11 +221,11 @@ if rank == root:
 #############################
 
 if rank == root:
-    reg = [2,1.5,1,0.5,0.1,0.05,0.01]
+    reg = [4,3.5,3,2.5,2,1.5,1,0.5,0.1,0.05,0.01]
     test_results = []
     for key, r in enumerate(reg):
         print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+        svc = SVC(kernel="precomputed", C=r, tol=1e-3, verbose=False)
         # scale might work best as 1/Nfeautres
 
         svc.fit(kernel_train, y_train)
@@ -244,7 +244,7 @@ if rank == root:
     print('\n Train Results\n')
     for key, r in enumerate(reg):
         print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+        svc = SVC(kernel="precomputed", C=r, tol=1e-3, verbose=False)
         # scale might work best as 1/Nfeautres
 
         svc.fit(kernel_train, y_train)
