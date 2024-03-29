@@ -1,0 +1,46 @@
+{
+    "lenX": [
+        16,
+        "entries"
+    ],
+    "lenY": [
+        4,
+        "entries"
+    ],
+    "n_tiles": [
+        64,
+        "tiles"
+    ],
+    "value_of_zero": [
+        1e-16,
+        ""
+    ],
+    "vdots_per_tile": [
+        1,
+        "entries"
+    ],
+    "total_time": [
+        33.686076086,
+        "seconds"
+    ],
+    "median_tile_time": [
+        6.924111284999995,
+        "seconds"
+    ],
+    "median_circ_sim": [
+        3.3237406115,
+        "seconds"
+    ],
+    "median_product": [
+        0.001651265,
+        "seconds"
+    ],
+    "ave max chi x": [
+        6,
+        "chi x"
+    ],
+    "ave max chi y": [
+        12.25,
+        "chi y"
+    ]
+}

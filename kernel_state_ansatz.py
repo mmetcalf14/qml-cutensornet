@@ -66,7 +66,8 @@ class KernelStateAnsatz:
             for (q0, q1) in entanglement_map:
                 symb0 = self.feature_symbol_list[q0]
                 symb1 = self.feature_symbol_list[q1]
-                exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
+                #exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
+                exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
                 self.ansatz_circ.XXPhase(exponent, q0, q1)
 
         # Apply routing by adding SWAPs eagerly just before the XXPhase gates
