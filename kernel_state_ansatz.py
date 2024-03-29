@@ -237,6 +237,8 @@ def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, in
         print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
         profiling_dict["avg_circ_sim"] = [average, "seconds"]
         profiling_dict["median_circ_sim"] = [median(mps_x_time), "seconds"]
+        profiling_dict["q1_circ_sim"] = [np.percentile(mps_x_time, 25), "seconds"]
+        profiling_dict["q3_circ_sim"] = [np.percentile(mps_x_time, 75), "seconds"]
 
         if Y is not None:
             print("\nContracting the MPS of the circuits from the Y dataset...")
@@ -277,6 +279,8 @@ def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, in
             print(f"\tAverage time per MPS contraction: {round(average,4)} seconds.")
             profiling_dict["avg_circ_sim"] = [average, "seconds"]
             profiling_dict["median_circ_sim"] = [median(mps_x_time + mps_y_time), "seconds"]
+            profiling_dict["q1_circ_sim"] = [np.percentile(mps_x_time + mps_y_time, 25), "seconds"]
+            profiling_dict["q3_circ_sim"] = [np.percentile(mps_x_time + mps_y_time, 75), "seconds"]
 
     # If Y == X then Y chunk for the first iteration will be a copy of the X chunk
     else:
@@ -433,6 +437,8 @@ def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, in
         print(f"\tAverage time per inner product: {round(average,4)} seconds.")
         profiling_dict["avg_product"] = [average, "seconds"]
         profiling_dict["median_product"] = [median(vdot_time), "seconds"]
+        profiling_dict["q1_product"] = [np.percentile(vdot_time, 25), "seconds"]
+        profiling_dict["q3_product"] = [np.percentile(vdot_time, 75), "seconds"]
         print("")
 
         # If requested by user, dump `profiling_dict` to file
