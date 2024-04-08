@@ -1,0 +1,4 @@
+pandas==2.2.1
+scikit-learn==1.4.1
+mpi4py==3.1.5
+pytket==1.26.0
