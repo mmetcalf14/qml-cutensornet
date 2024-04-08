@@ -37,12 +37,15 @@ pip install pytket-cutensornet==0.6.0
 
 This backend makes use of Julia, ITensors.jl, pyCall and a local package KernelPkg.jl.
 
-To install *Julia*, follow: https://docs.julialang.org/en/v1/manual/getting-started/
+To install *Julia* on your `conda` environment use:
+```
+conda install conda-forge::julia==1.9.4
+```
 
 To install *ITensors.jl*, enter the Julia REPL and press `]` to enter the package manager. Type `add ITensors`.
 
 To install *pyCall*:
-- `pip install julia`
+- `pip install julia==0.6.2`
 - In Python REPL, `import julia` followed by `julia.install()`
 
 Test pyCall installation was successful by entering the Python REPL and typing:
@@ -53,7 +56,7 @@ from julia import Base
 Base.sind(60)
  ```
 
-Finally, to install *KernelPkg.jl*, move the contents of the folder `KernelPkg` in this repository to `~/.julia/dev/KernelPkg`. Then, open the Julia REPL and press `]` to enter the package manager. Locally install the package by typing:
+Finally, to install *KernelPkg.jl*, copy the contents of the folder `KernelPkg` in this repository to `~/.julia/dev/KernelPkg`. Then, open the Julia REPL and press `]` to enter the package manager. Locally install the package by typing:
 `dev ~/.julia/dev/KernelPkg`.
 
 
