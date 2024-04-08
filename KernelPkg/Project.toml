@@ -1,0 +1,16 @@
+name = "KernelPkg"
+uuid = "ac24e002-fb8a-47da-862b-07f92bddd8d7"
+authors = ["Pablo Andres-Martinez"]
+version = "1.0.0-DEV"
+
+[deps]
+ITensors = "9136182c-28ba-11e9-034c-db9fb085ebd5"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
