@@ -66,7 +66,6 @@ class KernelStateAnsatz:
             for (q0, q1) in entanglement_map:
                 symb0 = self.feature_symbol_list[q0]
                 symb1 = self.feature_symbol_list[q1]
-                #exponent = (2/np.pi)*gamma*gamma*(1 - symb0)*(1 - symb1)
                 exponent = gamma*gamma*(1 - symb0)*(1 - symb1)
                 self.ansatz_circ.XXPhase(exponent, q0, q1)
 
@@ -158,7 +157,7 @@ def build_kernel_matrix(
             all data points. If not provided it is set to be equal to `X`.
         info_file: The name of the file where to save performance information of this call.
             Also used as a suffix for the checkpointing file. Defaults to "info_file".
-        truncation_error: The absolute cutoff below which singular values are removed.
+        truncation_error: Truncation error for SVD.
         number_of_tiles: Determines a lower bound of the number of tiles the kernel matrix
             is split into. This should often be a multiple of the number of processes, so
             that each process is assigned the same number of tiles. Larger tiles (i.e. less

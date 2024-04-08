@@ -103,7 +103,7 @@ class KernelStateAnsatz:
         return the_circuit
 
 
-def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, info_file=None, mpi_comm=None, gpu_max_mem=40, svd_cutoff=1e-15) -> np.ndarray:
+def build_kernel_matrix(mpi_comm, ansatz: KernelStateAnsatz, X, Y=None, info_file=None, truncation_error=None, loglevel=30) -> np.ndarray:
     """Use MPI to parallelise the calculation of entries of the kernel matrix.
 
     Notes:
@@ -111,7 +111,9 @@ def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, in
         possible is preferable for matters of efficiency.
 
     Args:
-        config: An instance of Config setting the configuration of simulations.
+        mpi_comm: The MPI communicator created by the caller of this function. This
+            function will attempt to parallelise across all processes within the
+            communicator.
         ansatz: a symbolic circuit describing the ansatz.
         X: A 2D array where `X[i, :]` corresponds to the i-th data point and
             each `X[:, j]` corresponds to the values of the j-th feature across
@@ -121,13 +123,8 @@ def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, in
             all data points. If not provided it is set to be equal to `X`.
         info_file: The name of the file where to save performance information of this call.
             If not provided, the performance information will only appear in stdout.
-        mpi_comm: The MPI communicator created by the caller of this function. This
-            function will attempt to parallelise across all processes within the
-            communicator.
-        gpu_max_mem: The number of GiB available in each GPU. Defaults to 40.
-        svd_cutoff: Absolute cutoff for SVD truncation. Any singular value smaller than
-            `svd_cutoff` will be truncated. Increasing it will reduce fidelity.
-            Defaults to 1e-15.
+        truncation_error: Truncation error for SVD.
+        loglevel: Set to 10 for debug mode. Defaults to 30 (quiet).
 
     Returns:
         A kernel matrix of dimensions `len(Y)`x`len(X)`.
@@ -138,9 +135,15 @@ def build_kernel_matrix(config: Config, ansatz: KernelStateAnsatz, X, Y=None, in
     """
     if Y is not None and len(X) < len(Y):
         raise ValueError("X must not be smaller than Y. Swap input order and transpose output.")
+    if truncation_error is None:
+        raise ValueError("You must specify a truncation error.")
+
+    config = Config(
+        truncation_fidelity=1-truncation_error,
+        loglevel=loglevel,
+    )
 
     # Resource information
-    gpu_max_mem = gpu_max_mem*(1024**3) # Convert to bytes
     n_qubits = ansatz.ansatz_circ.n_qubits
 
     # MPI information
