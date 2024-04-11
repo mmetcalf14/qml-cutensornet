@@ -12,7 +12,7 @@ data_dict = {
   "avg_mps_time": [], "avg_dot_time": [], "avg_max_chi": [], "avg_mps_mem": [],
 }
 
-dir = "data/"
+dir = "raw/"
 kernel = "train"
 for f in os.listdir(dir):
     filename = os.fsdecode(f).split(".json")[0]
