@@ -84,3 +84,10 @@ where each of the arguments have the following meaning:
 - `<data_file>` is the CSV file containing the preprocessed dataset. This should be `"elliptic_preproc.csv"`.
 
 **NOTE**: The above command will use a single process. In order to take advantage of parallelisation you should run the Python script via the appropriate MPI command (e.g. via `mpirun`, `mpiexec`, `srun`, etc.).
+
+### Other main files
+
+Apart from the standard `main.py` to run training and test, we provide other supporting scripts to acquire different information from the experiments:
+
+- `main_no_test.py` runs only training and stops after the Gram matrix on the training dataset is built. It accepts the same arguments as `main.py`
+- `main_track_mem.py` runs the simulation of a single circuit from the specified ansatz and datapoint and tracks memory usage throughout its simulation. It expects the same arguments as `main.py`, with the addition of a final `int` to specify the datapoint index of the circuit to be simulated.
