@@ -4,6 +4,7 @@ r=2
 s=5
 df="elliptic_preproc.csv"
 
+mkdir raw/
 cd ../..
 
 for nf in 30 60 90 120 150 165; do
@@ -11,3 +12,5 @@ for g in 0.1 0.5 1.0; do
     python main_no_test.py "GPU" $nf $r $g $d $ntr $ntr $s $df
 done
 done
+
+mv train_Nf* runs/qubit_scaling/raw/
