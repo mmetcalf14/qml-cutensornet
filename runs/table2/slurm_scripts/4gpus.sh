@@ -4,7 +4,7 @@
 #SBATCH -G 4
 #SBATCH --ntasks-per-node 4
 #SBATCH -q regular
-#SBATCH -t 01:00:00
+#SBATCH -t 02:00:00
 
 export CUDA_VISIBLE_DEVICES=$SLURM_LOCALID
 export MPI4PY_RC_RECV_MPROBE=0
