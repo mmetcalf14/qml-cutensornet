@@ -98,4 +98,4 @@ for key, r in enumerate(reg):
     auc = roc_auc_score(test_labels, test_predict)
     test_results.append([r,accuracy, precision, recall, auc])
 
-np.save(f"raw/seed_{data_seed}.npy", test_results)
+np.save(f"raw/gaussian/seed_{data_seed}.npy", test_results)
