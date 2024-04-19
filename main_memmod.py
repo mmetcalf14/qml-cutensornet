@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, QuantileTransformer
 from sklearn.svm import SVC
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, roc_auc_score, average_precision_score
-from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
+from kernel_state_ansatz_memmod import KernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
 from quimb_mps import Config
@@ -136,66 +136,63 @@ ansatz = KernelStateAnsatz(
 train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_train)
 test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit_test)
 
+
 time0 = MPI.Wtime()
-kernel_train = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
+build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TrainKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_train),kernel_train)
-    print(kernel_train)
     sys.stdout.flush()
 
 time0 = MPI.Wtime()
-kernel_test = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
+build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-    np.save("kernels/TestKernel_Nf-{}_r-{}_g-{}_Ntr-{}.npy".format(num_features, reps, gamma, n_illicit_test),kernel_test)
-    #print('Test Kernel\n',kernel_test)
     sys.stdout.flush()
 
 #############################
 # Testing the kernel matrix #
 #############################
 
-if rank == root:
-    reg = [2,1.5,1,0.5,0.1,0.05,0.01]
-    test_results = []
-    for key, r in enumerate(reg):
-        print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
-        # scale might work best as 1/Nfeautres
-
-        svc.fit(kernel_train, train_labels)
-        test_predict = svc.predict(kernel_test)
-        accuracy = accuracy_score(test_labels,test_predict)
-        print('accuracy: ', accuracy)
-        precision = precision_score(test_labels,test_predict)
-        print('precision: ', precision)
-        recall = recall_score(test_labels, test_predict)
-        print('recall: ', recall)
-        auc = roc_auc_score(test_labels, test_predict)
-        print('auc: ', auc)
-        test_results.append([r,accuracy, precision, recall, auc])
-
-    train_results = []
-    print('\n Train Results\n')
-    for key, r in enumerate(reg):
-        print('coeff: ', r)
-        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
-        # scale might work best as 1/Nfeautres
-
-        svc.fit(kernel_train, train_labels)
-        test_predict = svc.predict(kernel_train)
-        accuracy = accuracy_score(train_labels,test_predict)
-        print('accuracy: ', accuracy)
-        precision = precision_score(train_labels,test_predict)
-        print('precision: ', precision)
-        recall = recall_score(train_labels, test_predict)
-        print('recall: ', recall)
-        auc = roc_auc_score(train_labels, test_predict)
-        print('auc: ', auc)
-        train_results.append([r,accuracy, precision, recall, auc])
-
-    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_train),train_results)
-    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_test),test_results)
+#if rank == root:
+#    reg = [2,1.5,1,0.5,0.1,0.05,0.01]
+#    test_results = []
+#    for key, r in enumerate(reg):
+#        print('coeff: ', r)
+#        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+#        # scale might work best as 1/Nfeautres
+#
+#        svc.fit(kernel_train, train_labels)
+#        test_predict = svc.predict(kernel_test)
+#        accuracy = accuracy_score(test_labels,test_predict)
+#        print('accuracy: ', accuracy)
+#        precision = precision_score(test_labels,test_predict)
+#        print('precision: ', precision)
+#        recall = recall_score(test_labels, test_predict)
+#        print('recall: ', recall)
+#        auc = roc_auc_score(test_labels, test_predict)
+#        print('auc: ', auc)
+#        test_results.append([r,accuracy, precision, recall, auc])
+#
+#    train_results = []
+#    print('\n Train Results\n')
+#    for key, r in enumerate(reg):
+#        print('coeff: ', r)
+#        svc = SVC(kernel="precomputed", C=r, tol=1e-5, verbose=False)
+#        # scale might work best as 1/Nfeautres
+#
+#        svc.fit(kernel_train, train_labels)
+#        test_predict = svc.predict(kernel_train)
+#        accuracy = accuracy_score(train_labels,test_predict)
+#        print('accuracy: ', accuracy)
+#        precision = precision_score(train_labels,test_predict)
+#        print('precision: ', precision)
+#        recall = recall_score(train_labels, test_predict)
+#        print('recall: ', recall)
+#        auc = roc_auc_score(train_labels, test_predict)
+#        print('auc: ', auc)
+#        train_results.append([r,accuracy, precision, recall, auc])
+#
+#    np.save('data/TrainData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_train),train_results)
+#    np.save('data/TestData_Nf-{}_r-{}_g-{}_Ntr-{}.npy'.format(num_features, reps, gamma, n_illicit_test),test_results)

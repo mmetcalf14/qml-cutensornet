@@ -101,7 +101,7 @@ def build_kernel_matrix(
         info_file=None,
         cpu_max_mem=6,
         minutes_per_checkpoint=None,
-    ) -> np.ndarray:
+    ):
     """Calculation of entries of the kernel matrix.
 
     Notes:
@@ -152,6 +152,9 @@ def build_kernel_matrix(
     # Checkpointing file
     pathlib.Path("tmp").mkdir(exist_ok=True)
     checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file + ".npy")
+    
+    pathlib.Path("kernels").mkdir(exist_ok=True)
+    kernel_file = pathlib.Path(f"kernels/kernel_rank_{rank}_" + info_file + ".npy")
 
     # Dictionary to keep track of profiling information
     if rank == root:
@@ -296,7 +299,8 @@ def build_kernel_matrix(
     else:
         # Allocate space for kernel matrix
         len_Y = len(Y) if Y is not None else len(X)
-        kernel_mat = np.zeros(shape=(len_Y, len(X)))
+        #kernel_mat = np.zeros(shape=(len_Y, len(X)))
+        kernel_mat = np.zeros(shape=(len_Y, entries_per_chunk))
     last_checkpoint_time = MPI.Wtime()
 
     vdot_time = []
@@ -304,7 +308,7 @@ def build_kernel_matrix(
     if Y is not None:
         iterations = y_chunks
     else:
-        iterations = (x_chunks // 2) + 1  # Some iterations are skipped thanks to symmetry
+        iterations = x_chunks  # Some iterations are skipped thanks to symmetry
     for this_iteration in range(iterations):
 
         if rank == root:
@@ -338,37 +342,27 @@ def build_kernel_matrix(
 
         for i, x_mps in enumerate(mps_x_chunk):
             if x_mps is None: break  # Reached the padded entries; stop
+
             for j, y_mps in enumerate(mps_y_chunk):
                 if y_mps is None: break  # Reached the padded entries; stop
-                
+
                 x_index = i + entries_per_chunk*rank
                 y_index = j + entries_per_chunk*((rank+this_iteration) % y_chunks)
-#                if Y is None:
-#                    if x_index == 5 and y_index == 0:
-#                        print('Success on proc {}'.format(rank))
-#                    else: print('not obtained')
+
                 # Skip if this value was saved in the checkpoint
-                if kernel_mat[y_index, x_index] != 0: break
+                # if kernel_mat[y_index, x_index] != 0: break
+                if kernel_mat[y_index, i] != 0: break
                 
+                if Y is None and x_index < y_index: break
+
                 time_a = MPI.Wtime()
                 overlap = x_mps.H @ y_mps
                 vdot_time.append(MPI.Wtime() - time_a)
 
                 kernel_entry = abs(overlap)**2
 
-                kernel_mat[y_index, x_index] = kernel_entry
-                # If X == Y, some entries can be filled thanks to symmetry
-                if Y is None:
-                    if not (
-                        this_iteration == 0 or  # Don't do it for the block diagonal
-                        x_chunks % 2 == 0 and this_iteration == iterations - 1  # Don't do for last iteration
-                    ):
-                        kernel_mat[x_index, y_index] = kernel_entry
-#                     NOTE: We skip for the block diagonal since we calculate each entry of it as if it were
-#                     a standard tile, so the symmetry would just rewrite values that we have calculated.
-#                     NOTE: When `x_chunks` is even we must skip the last iteration. Otherwise two different CPUs
-#                     would solve the same tile, causing these to have double their value after applying
-#                     `mpi_comm.reduce` with SUM operator. When `x_chunks` is odd this is not an issue.
+#                kernel_mat[y_index, x_index] = kernel_entry
+                kernel_mat[y_index, i] = kernel_entry
 
             if rank == root and progress_bar * progress_tick < i:
                 print(f"\t{progress_bar*10}%")
@@ -407,9 +401,15 @@ def build_kernel_matrix(
             print(f"\t[Rank 0] Round robin message passing completed in {round(duration,2)} seconds")
             sys.stdout.flush()
             profiling_dict["r0_RR_recv"][0] += duration
-    # Collect the tiles of all CPUs into a the final kernel matrix
-    kernel_mat = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
 
+    # Collect the tiles of all CPUs into a the final kernel matrix
+    #kernel_mat = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
+    if rank == 3:
+        print('Im proc {} and this is my kernel\n{}'.format(rank, kernel_mat))
+    
+    # Save final kernel mat in checkpoint file
+    np.save(kernel_file, kernel_mat)
+    
     # Report back to user
     if rank == root:
         tiling_duration = MPI.Wtime() - tiling_start_time
@@ -435,4 +435,11 @@ def build_kernel_matrix(
     # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
     checkpoint_file.unlink(missing_ok=True)
 
-    return kernel_mat
+    return 0 #kernel_mat
+
+
+#    def compile_kernel_from_file(mpi_comm, info_file)-> np.ndarray:
+#    
+#    kernel_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file + ".npy")
+#    
+#    return kernel_mat
