@@ -28,14 +28,18 @@ avg_precision = [np.mean(metrics) for metrics in precision_dict.values()]
 avg_recall = [np.mean(metrics) for metrics in recall_dict.values()]
 avg_auc = [np.mean(metrics) for metrics in auc_dict.values()]
 
+# Among these, choose the one with highest AUC
+best_result_idx = avg_auc.index(max(avg_auc))
+
 # Add them to the dataframe dictionary
 df_dict["kernel"].append("Gaussian")
 df_dict["gamma"].append("--")
 df_dict["d"].append("--")
-df_dict["AUC"].append(max(avg_auc))
-df_dict["recall"].append(max(avg_recall))
-df_dict["precision"].append(max(avg_precision))
-df_dict["accuracy"].append(max(avg_accuracy))
+df_dict["AUC"].append(avg_auc[best_result_idx])
+df_dict["recall"].append(avg_recall[best_result_idx])
+df_dict["precision"].append(avg_precision[best_result_idx])
+df_dict["accuracy"].append(avg_accuracy[best_result_idx])
+
 
 
 # Collect the results from the quantum kernels
@@ -74,14 +78,17 @@ for gamma in {0.1,0.5,1.0}:
     avg_recall = [np.mean(metrics) for (_,x,y), metrics in recall_dict.items() if x==gamma and y==d]
     avg_auc = [np.mean(metrics) for (_,x,y), metrics in auc_dict.items() if x==gamma and y==d]
 
+    # Among these, choose the one with highest AUC
+    best_result_idx = avg_auc.index(max(avg_auc))
+
     # Add them to the dataframe dictionary
     df_dict["kernel"].append("quantum")
     df_dict["d"].append(d)
     df_dict["gamma"].append(gamma)
-    df_dict["AUC"].append(max(avg_auc))
-    df_dict["recall"].append(max(avg_recall))
-    df_dict["precision"].append(max(avg_precision))
-    df_dict["accuracy"].append(max(avg_accuracy))
+    df_dict["AUC"].append(avg_auc[best_result_idx])
+    df_dict["recall"].append(avg_recall[best_result_idx])
+    df_dict["precision"].append(avg_precision[best_result_idx])
+    df_dict["accuracy"].append(avg_accuracy[best_result_idx])
 
 
 # Create the DataFrame and dump to CSV file
