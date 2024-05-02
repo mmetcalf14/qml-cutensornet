@@ -138,18 +138,18 @@ test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_il
 
 
 time0 = MPI.Wtime()
-build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
+build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file_1=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
     sys.stdout.flush()
 
 time0 = MPI.Wtime()
-build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
+build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file_1=test_info,info_file_2=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-    sys.stdout.flush()
+#    sys.stdout.flush()
 
 #############################
 # Testing the kernel matrix #

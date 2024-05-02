@@ -98,7 +98,8 @@ def build_kernel_matrix(
         ansatz: KernelStateAnsatz,
         X,
         Y=None,
-        info_file=None,
+        info_file_1=None,
+        info_file_2=None,
         cpu_max_mem=6,
         minutes_per_checkpoint=None,
     ):
@@ -151,10 +152,17 @@ def build_kernel_matrix(
 
     # Checkpointing file
     pathlib.Path("tmp").mkdir(exist_ok=True)
-    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file + ".npy")
+    checkpoint_file = pathlib.Path(f"tmp/checkpoint_rank_{rank}_" + info_file_1 + ".npy")
     
     pathlib.Path("kernels").mkdir(exist_ok=True)
-    kernel_file = pathlib.Path(f"kernels/kernel_rank_{rank}_" + info_file + ".npy")
+    kernel_file = pathlib.Path(f"kernels/kernel_rank_{rank}_" + info_file_1 + ".npy")
+    
+    if Y is None:
+        pathlib.Path("mps").mkdir(exist_ok=True)
+        mps_file = pathlib.Path(f"mps/mps_rank_{rank}_" + info_file_1 + ".npy")
+    else:
+        pathlib.Path("mps").mkdir(exist_ok=True)
+        mps_file = pathlib.Path(f"mps/mps_rank_{rank}_" + info_file_2 + ".npy")
 
     # Dictionary to keep track of profiling information
     if rank == root:
@@ -212,21 +220,31 @@ def build_kernel_matrix(
     mps_x_time = []
     progress_bar = 0
     progress_tick = int(np.ceil(entries_per_chunk / 10))
+    
+    if mps_file.is_file():
+        time0 = MPI.Wtime()
+        mps_x_chunk = np.load(mps_file, allow_pickle=True)
+        mps_x_time.append(MPI.Wtime() - time0)
+        print("MPS loaded from file")
+        sys.stdout.flush()
+    else:
+        for k, circ in enumerate(circs_x_chunk):
+            # Simulate the circuit and obtain the output state as an MPS
+            if circ is not None:
+                time0 = MPI.Wtime()
+                mps = simulate(circ, config)
+                mps_x_time.append(MPI.Wtime() - time0)
+            else:
+                mps = None
+            mps_x_chunk.append(mps)
 
-    for k, circ in enumerate(circs_x_chunk):
-        # Simulate the circuit and obtain the output state as an MPS
-        if circ is not None:
-            time0 = MPI.Wtime()
-            mps = simulate(circ, config)
-            mps_x_time.append(MPI.Wtime() - time0)
-        else:
-            mps = None
-        mps_x_chunk.append(mps)
-
-        if rank == root and progress_bar * progress_tick < k:
-            print(f"{progress_bar*10}%")
-            sys.stdout.flush()
-            progress_bar += 1
+            if rank == root and progress_bar * progress_tick < k:
+                print(f"{progress_bar*10}%")
+                sys.stdout.flush()
+                progress_bar += 1
+        
+        ### Save MPS for X data ###
+        np.save(mps_file, mps_x_chunk)
 
     # Report back to user
     if rank == root:
@@ -426,10 +444,10 @@ def build_kernel_matrix(
         print("")
 
         # If requested by user, dump `profiling_dict` to file
-        if info_file is not None:
-            with open(info_file + ".json", 'w') as fp:
+        if info_file_1 is not None:
+            with open(info_file_1 + ".json", 'w') as fp:
                 json.dump(profiling_dict, fp, indent=4)
-            print(f"Profiling information saved at {info_file}.json.\n")
+            print(f"Profiling information saved at {info_file_1}.json.\n")
         sys.stdout.flush()
 
     # We can delete the checkpoint file (useful, so that we avoid risk of collisions)
