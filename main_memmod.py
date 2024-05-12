@@ -149,7 +149,7 @@ build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = re
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
-#    sys.stdout.flush()
+    sys.stdout.flush()
 
 #############################
 # Testing the kernel matrix #

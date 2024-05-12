@@ -148,6 +148,7 @@ def build_kernel_matrix(
     n_procs = mpi_comm.Get_size()
 
     entries_per_chunk = int(np.ceil(len(X) / n_procs))
+    print('num in chunk', entries_per_chunk)
     max_mps_per_cpu = 2*entries_per_chunk  # X + Y chunks
 
     # Checkpointing file
@@ -318,7 +319,12 @@ def build_kernel_matrix(
         # Allocate space for kernel matrix
         len_Y = len(Y) if Y is not None else len(X)
         #kernel_mat = np.zeros(shape=(len_Y, len(X)))
-        kernel_mat = np.zeros(shape=(len_Y, entries_per_chunk))
+        remainder_x = n_procs*entries_per_chunk % len(X)
+        if rank is not n_procs -1:
+            kernel_mat = np.zeros(shape=(len_Y, entries_per_chunk))
+        else:
+            kernel_mat = np.zeros(shape=(len_Y, entries_per_chunk-remainder_x))
+    print(f'{np.shape(kernel_mat)} is the kernel dimension for proc {rank} with remainder {remainder_x}')
     last_checkpoint_time = MPI.Wtime()
 
     vdot_time = []
@@ -420,12 +426,9 @@ def build_kernel_matrix(
             sys.stdout.flush()
             profiling_dict["r0_RR_recv"][0] += duration
 
-    # Collect the tiles of all CPUs into a the final kernel matrix
-    #kernel_mat = mpi_comm.reduce(kernel_mat, op=MPI.SUM, root=root)
-    if rank == 3:
-        print('Im proc {} and this is my kernel\n{}'.format(rank, kernel_mat))
     
     # Save final kernel mat in checkpoint file
+    #print(f'Im kernel {rank}\n{kernel_mat}')
     np.save(kernel_file, kernel_mat)
     
     # Report back to user

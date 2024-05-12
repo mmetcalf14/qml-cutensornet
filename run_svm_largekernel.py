@@ -41,14 +41,16 @@ test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_il
 X_dim = n_licit_train + n_illicit_train
 Y_dim = n_licit_test + n_illicit_test
 
-entries_per_chunk = int(np.ceil(X_dim)/n_procs)
+entries_per_chunk = int(np.ceil(X_dim/n_procs))
+print(n_procs*entries_per_chunk)
+print('remainder ',n_procs*entries_per_chunk % X_dim)
 
 kernel_train = np.zeros((X_dim,X_dim))
-
+#kernel_train = np.zeros((X_dim,n_procs*entries_per_chunk))
 kernel_test = np.zeros((Y_dim,X_dim))
 
 for rank in range(n_procs):
-
+    print(rank)
     kernel_file_train = pathlib.Path(f"kernels/kernel_rank_{rank}_" + train_info + ".npy")
     kernel_file_test = pathlib.Path(f"kernels/kernel_rank_{rank}_" + test_info + ".npy")
     if kernel_file_train.is_file():
@@ -60,15 +62,17 @@ for rank in range(n_procs):
         tmp_test = np.load(kernel_file_test)
     else:
         raise ValueError(f"test kernel file for rank {rank} does not exist")
-        
     x_index_i = entries_per_chunk*rank
-    x_index_j = entries_per_chunk*(rank+1)
-    
+    if rank is not n_procs-1:
+        x_index_j = entries_per_chunk*(rank+1)
+    else: x_index_j = X_dim
+    print(x_index_i,x_index_j)
     kernel_train[:, x_index_i:x_index_j] = tmp_train
-    kernel_test[:,x_index_i:x_index_j] = tmp_test
+    #kernel_test[:,x_index_i:x_index_j] = tmp_test
     
-kernel_train = np.transpose(kernel_train) + kernel_train - np.eye(X_dim,X_dim)
+kernel_train = np.transpose(kernel_train[:,0:X_dim]) + kernel_train[:,0:X_dim] - np.eye(X_dim,X_dim)
 print(kernel_train)
+
 
 ############################
  #Testing the kernel matrix #
