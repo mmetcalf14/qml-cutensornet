@@ -46,9 +46,7 @@ print(n_procs*entries_per_chunk)
 print('remainder ',n_procs*entries_per_chunk % X_dim)
 
 kernel_train = np.zeros((X_dim,X_dim))
-#kernel_train = np.zeros((X_dim,n_procs*entries_per_chunk))
 kernel_test = np.zeros((Y_dim,X_dim))
-
 for rank in range(n_procs):
     print(rank)
     kernel_file_train = pathlib.Path(f"kernels/kernel_rank_{rank}_" + train_info + ".npy")
@@ -68,11 +66,11 @@ for rank in range(n_procs):
     else: x_index_j = X_dim
     print(x_index_i,x_index_j)
     kernel_train[:, x_index_i:x_index_j] = tmp_train
-    #kernel_test[:,x_index_i:x_index_j] = tmp_test
+    kernel_test[:,x_index_i:x_index_j] = tmp_test
     
 kernel_train = np.transpose(kernel_train[:,0:X_dim]) + kernel_train[:,0:X_dim] - np.eye(X_dim,X_dim)
-print(kernel_train)
-
+#print(kernel_train)
+print(kernel_test)
 
 ############################
  #Testing the kernel matrix #

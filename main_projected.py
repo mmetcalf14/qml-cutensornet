@@ -9,10 +9,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, QuantileTransformer
 from sklearn.svm import SVC
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, roc_auc_score, average_precision_score
-from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
+#from kernel_state_ansatz import KernelStateAnsatz, build_kernel_matrix
+from projected_kernel_dense import ProjectedKernelStateAnsatz, build_kernel_matrix
 import scipy.linalg as la
 
 from quimb_mps import Config
+
+import warnings
+warnings.filterwarnings("ignore")
 
 mpi_comm = MPI.COMM_WORLD
 rank = mpi_comm.Get_rank()
@@ -56,12 +60,13 @@ config = Config(
 num_features = int(sys.argv[1])
 reps = int(sys.argv[2])
 gamma = float(sys.argv[3])
+alpha = float(sys.argv[4])
 entanglement_map = [[i,i+1] for i in range(num_features-1)]
 
-n_illicit = int(sys.argv[4])
-n_licit = int(sys.argv[5])
-data_seed = int(sys.argv[6])
-data_file = str(sys.argv[7])
+n_illicit = int(sys.argv[5])
+n_licit = int(sys.argv[6])
+data_seed = int(sys.argv[7])
+data_file = str(sys.argv[8])
 
 if rank == root:
     print("\nUsing the following parameters:")
@@ -112,8 +117,9 @@ pathlib.Path("kernels").mkdir(exist_ok=True)
 pathlib.Path("data").mkdir(exist_ok=True)
 
 # Create the ansatz class
-ansatz = KernelStateAnsatz(
+ansatz = ProjectedKernelStateAnsatz(
 	num_qubits=num_features,
+    num_features=num_features,
 	reps=reps,
 	gamma=gamma,
 	entanglement_map=entanglement_map,
@@ -124,7 +130,7 @@ train_info = "train_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_
 test_info = "test_Nf-{}_r-{}_g-{}_Ntr-{}".format(num_features, reps, gamma, n_illicit)
 
 time0 = MPI.Wtime()
-kernel_train = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
+kernel_train = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, alpha=alpha, info_file=train_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on training set. Time: {round(time1-time0,2)} seconds\n")
@@ -133,7 +139,7 @@ if rank == root:
     sys.stdout.flush()
 
 time0 = MPI.Wtime()
-kernel_test = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
+kernel_test = build_kernel_matrix(mpi_comm, config, ansatz, X = reduced_train_features, Y = reduced_test_features, alpha=alpha, info_file=test_info, minutes_per_checkpoint=minutes_per_checkpoint)
 time1 = MPI.Wtime()
 if rank == root:
     print(f"Built kernel matrix on test set. Time: {round(time1-time0,2)} seconds\n")
